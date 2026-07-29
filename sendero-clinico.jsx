@@ -566,7 +566,7 @@ const buildPracticeQueue = (unlockedUnits) => {
 // ---------- PERSISTENCE ----------
 
 const STORAGE_KEY = "sendero-clinico-v1";
-const DEFAULT_PROGRESS = { xp: 0, streak: 0, lastDay: null, freeMode: false, units: {} };
+const DEFAULT_PROGRESS = { xp: 0, streak: 0, lastDay: null, freeMode: false, units: {}, goal: 20, xpToday: 0, xpDay: null };
 
 const loadProgress = async () => {
   try {
@@ -923,6 +923,7 @@ function CompleteScreen({ result, onContinue }) {
         </div>
       </div>
       {result.streakUp && <div className="streak-note">🔥 ¡Racha de {result.streak} {result.streak === 1 ? "día" : "días"}!</div>}
+      {result.goalHit && <div className="goal-note">🎯 ¡Meta diaria cumplida!</div>}
       <div className="complete-footer">
         <Chunky full onClick={onContinue}>CONTINUAR</Chunky>
       </div>
@@ -1042,7 +1043,7 @@ function GlossaryTab({ progress }) {
   );
 }
 
-function ProfileTab({ progress, onToggleFree, onReset }) {
+function ProfileTab({ progress, onToggleFree, onSetGoal, onReset }) {
   const crowns = UNITS.filter((u) => (progress.units[u.id]?.done || 0) === 3).length;
   const [confirming, setConfirming] = useState(false);
   return (
@@ -1061,6 +1062,17 @@ function ProfileTab({ progress, onToggleFree, onReset }) {
         <button className={"toggle" + (progress.freeMode ? " on" : "")} onClick={onToggleFree} aria-label="Toggle free mode">
           <span className="knob" />
         </button>
+      </div>
+      <div className="setting-card goal-card">
+        <div>
+          <b>Meta diaria</b>
+          <div className="muted">How much XP you aim to earn each day.</div>
+        </div>
+        <div className="goal-choices">
+          {[10, 20, 30].map((g) => (
+            <Chunky key={g} small color="#F2A93B" dark="#C4821F" ghost={progress.goal !== g} onClick={() => onSetGoal(g)}>{g}</Chunky>
+          ))}
+        </div>
       </div>
       <div className="setting-card">
         <div>
@@ -1128,8 +1140,13 @@ export default function App() {
     const p = { ...progress, units: { ...progress.units } };
     p.xp += xpEarned;
 
-    let streakUp = false;
     const today = todayKey();
+    if (p.xpDay !== today) { p.xpDay = today; p.xpToday = 0; }
+    const beforeToday = p.xpToday;
+    p.xpToday += xpEarned;
+    const goalHit = beforeToday < p.goal && p.xpToday >= p.goal;
+
+    let streakUp = false;
     if (p.lastDay !== today) {
       p.streak = isYesterday(p.lastDay) ? p.streak + 1 : 1;
       p.lastDay = today;
@@ -1143,7 +1160,7 @@ export default function App() {
 
     setProgress(p);
     saveProgress(p);
-    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp });
+    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit });
     setSession(null);
   };
 
@@ -1178,6 +1195,14 @@ export default function App() {
             </div>
             <div className="header-stats">
               <span className="pill fire">🔥 {progress.streak}</span>
+              {(() => {
+                const todayXp = progress.xpDay === todayKey() ? progress.xpToday : 0;
+                return (
+                  <span className={"pill goal" + (todayXp >= progress.goal ? " met" : "")}>
+                    🎯 {Math.min(todayXp, progress.goal)}/{progress.goal}
+                  </span>
+                );
+              })()}
               <span className="pill gold">⚡ {progress.xp}</span>
             </div>
           </header>
@@ -1189,6 +1214,7 @@ export default function App() {
               <ProfileTab
                 progress={progress}
                 onToggleFree={() => { const p = { ...progress, freeMode: !progress.freeMode }; setProgress(p); saveProgress(p); }}
+                onSetGoal={(g) => { const p = { ...progress, goal: g }; setProgress(p); saveProgress(p); }}
                 onReset={() => { const p = { ...DEFAULT_PROGRESS, units: {} }; setProgress(p); saveProgress(p); }}
               />
             )}
@@ -1244,6 +1270,8 @@ button { font-family: inherit; cursor: pointer; }
 }
 .pill.fire { color: #D97316; }
 .pill.gold { color: #B8860B; }
+.pill.goal { color: #6B7A70; }
+.pill.goal.met { color: #2E7D45; border-color: #3FA65C; background: #EAF7EC; }
 
 .main-scroll { flex: 1; overflow-y: auto; padding-bottom: 84px; }
 
@@ -1397,6 +1425,8 @@ button { font-family: inherit; cursor: pointer; }
 .stat-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #6B7A70; }
 .stat-val { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; margin-top: 2px; }
 .streak-note { margin-top: 18px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #D97316; }
+.goal-note { margin-top: 10px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #2E7D45; }
+.goal-choices { display: flex; gap: 8px; flex-shrink: 0; }
 .complete-footer { width: 100%; max-width: 340px; margin: 28px auto 0; }
 .confetti span { position: absolute; top: -10px; font-size: 24px; animation: fall 2.6s ease-in forwards; }
 .confetti span:nth-child(1) { left: 12%; animation-delay: 0s; }
