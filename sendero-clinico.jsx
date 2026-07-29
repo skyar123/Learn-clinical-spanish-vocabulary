@@ -446,6 +446,14 @@ const isYesterday = (key) => {
 let soundOn = true;
 const setSoundOn = (v) => { soundOn = v; };
 
+// Global motion switch, mirrored from progress.reduceMotion. Gates haptics and
+// the celebratory combo overlay for vestibular sensitivity or battery reasons.
+let motionOn = true;
+const setMotionOn = (v) => { motionOn = v; };
+const buzz = (pattern) => {
+  try { if (motionOn && navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* no haptics */ }
+};
+
 // Speech: pronounce Spanish text if a voice exists. Fails silently.
 // Pass slow=true for a half-speed pass (the turtle button).
 let cachedVoice = null;
@@ -600,7 +608,7 @@ const STORAGE_KEY = "sendero-clinico-v1";
 const DEFAULT_PROGRESS = {
   xp: 0, streak: 0, lastDay: null, freeMode: false, units: {},
   goal: 20, xpToday: 0, xpDay: null,
-  itemStats: {}, soundOn: true, audioExercises: true,
+  itemStats: {}, soundOn: true, audioExercises: true, reduceMotion: false,
 };
 
 // Stat key for one vocabulary item.
@@ -841,6 +849,8 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
   const [picked, setPicked] = useState([]);
   // Unique items missed this session, for the post-lesson review (keyed to dedupe).
   const missedRef = useRef(new Map());
+  const [combo, setCombo] = useState(0);
+  const [comboFlash, setComboFlash] = useState(0); // shows a milestone overlay briefly
 
   const ex = items[idx];
   const total = items.length;
@@ -862,11 +872,17 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
     if (ok) {
       playCorrect();
       setSolved((s) => s + 1);
+      setCombo((c) => {
+        const n = c + 1;
+        if (n >= 5 && n % 5 === 0) { setComboFlash(n); buzz([18, 40, 18]); setTimeout(() => setComboFlash(0), 950); }
+        return n;
+      });
       setPhase("good");
       if (ex.type !== "mcq_es_en") speak(ex.item.es);
     } else {
       playWrong();
       loseHeart();
+      setCombo(0);
       if (!missedRef.current.has(statKey(ex.item))) missedRef.current.set(statKey(ex.item), ex.item);
       // Ask it again later. Typing falls back to multiple choice, and a
       // listening item comes back as visible text so a missing voice can't trap it.
@@ -904,6 +920,12 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
 
   return (
     <div className="screen lesson-screen">
+      {comboFlash > 0 && (
+        <div className={"combo-pop" + (motionOn ? "" : " static")} aria-hidden="true">
+          <span className="combo-emoji">🔥</span>
+          <span className="combo-num">¡Combo x{comboFlash}!</span>
+        </div>
+      )}
       <TopBar progress={solved} total={total} hearts={hearts} onQuit={onQuit} />
       <div className="lesson-body">
         <div className="lesson-title" style={{ color: dark }}>{title}</div>
@@ -982,7 +1004,33 @@ function CompleteScreen({ result, onContinue, onReview }) {
 
 // ---------- TRAIL (HOME) ----------
 
+function Guidebook({ unit, onClose }) {
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head" style={{ color: unit.dark }}>
+          <span>{unit.icon} {unit.title}</span>
+          <button className="modal-x" onClick={onClose} aria-label="Close guidebook">✕</button>
+        </div>
+        <div className="modal-sub">{unit.subtitle}</div>
+        <div className="modal-body">
+          {unit.items.map((it) => (
+            <div key={it.es} className="gloss-row">
+              <div className="gloss-text">
+                <div className="gloss-es">{it.es}</div>
+                <div className="gloss-en">{it.en}</div>
+              </div>
+              <SpeakBtn text={it.es} color={unit.dark} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Trail({ progress, onStart }) {
+  const [guide, setGuide] = useState(null);
   const isUnitUnlocked = (i) => {
     if (progress.freeMode || i === 0) return true;
     const prev = UNITS[i - 1];
@@ -991,6 +1039,7 @@ function Trail({ progress, onStart }) {
   const offsets = [0, 46, -46];
   return (
     <div className="trail">
+      {guide && <Guidebook unit={guide} onClose={() => setGuide(null)} />}
       {UNITS.map((u, ui) => {
         const unlocked = isUnitUnlocked(ui);
         const done = progress.units[u.id]?.done || 0;
@@ -1000,6 +1049,9 @@ function Trail({ progress, onStart }) {
               <div className="mile-num">ETAPA {ui + 1}</div>
               <div className="mile-title">{u.icon} {u.title}</div>
               <div className="mile-sub">{u.subtitle}</div>
+              {unlocked && (
+                <button className="mile-guide" onClick={() => setGuide(u)} aria-label={`Open guidebook for ${u.title}`}>📖 Guía</button>
+              )}
               {done === 3 && <div className="crown">👑</div>}
             </div>
             <div className="stones">
@@ -1113,7 +1165,16 @@ function GlossaryTab({ progress }) {
   );
 }
 
-function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggleAudioEx, onReset }) {
+const ACHIEVEMENTS = [
+  { id: "start", icon: "🥾", label: "Primer paso", test: (p, crowns) => p.xp > 0 },
+  { id: "crown", icon: "👑", label: "Primera corona", test: (p, crowns) => crowns >= 1 },
+  { id: "streak7", icon: "🔥", label: "Racha de 7", test: (p, crowns) => p.streak >= 7 },
+  { id: "xp100", icon: "⚡", label: "100 XP", test: (p, crowns) => p.xp >= 100 },
+  { id: "crowns5", icon: "🏅", label: "Cinco coronas", test: (p, crowns) => crowns >= 5 },
+  { id: "full", icon: "🏔️", label: "Sendero completo", test: (p, crowns) => crowns === UNITS.length },
+];
+
+function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggleAudioEx, onToggleMotion, onReset }) {
   const crowns = UNITS.filter((u) => (progress.units[u.id]?.done || 0) === 3).length;
   const [confirming, setConfirming] = useState(false);
   return (
@@ -1123,6 +1184,17 @@ function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggle
         <div className="stat-card gold"><div className="stat-label">XP total</div><div className="stat-val">⚡ {progress.xp}</div></div>
         <div className="stat-card fire"><div className="stat-label">Racha</div><div className="stat-val">🔥 {progress.streak}</div></div>
         <div className="stat-card green"><div className="stat-label">Coronas</div><div className="stat-val">👑 {crowns}</div></div>
+      </div>
+      <div className="ach-grid">
+        {ACHIEVEMENTS.map((a) => {
+          const earned = a.test(progress, crowns);
+          return (
+            <div key={a.id} className={"ach" + (earned ? " earned" : "")} title={a.label}>
+              <div className="ach-icon">{a.icon}</div>
+              <div className="ach-label">{a.label}</div>
+            </div>
+          );
+        })}
       </div>
       <div className="setting-card">
         <div>
@@ -1164,6 +1236,15 @@ function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggle
       </div>
       <div className="setting-card">
         <div>
+          <b>Reducir movimiento</b>
+          <div className="muted">Turns off buzzes and the combo animation, for battery or motion sensitivity.</div>
+        </div>
+        <button className={"toggle" + (progress.reduceMotion ? " on" : "")} onClick={onToggleMotion} aria-label="Toggle reduced motion">
+          <span className="knob" />
+        </button>
+      </div>
+      <div className="setting-card">
+        <div>
           <b>Fuente</b>
           <div className="muted">PASEO Salud Mental, Clinical Spanish for Mental Health workbook (Kohrt, 2022). Vocabulary drawn from its Vocabulario útil sections.</div>
         </div>
@@ -1195,7 +1276,7 @@ export default function App() {
 
   useEffect(() => {
     let live = true;
-    loadProgress().then((p) => { if (live) { setSoundOn(p.soundOn !== false); setProgress(p); } });
+    loadProgress().then((p) => { if (live) { setSoundOn(p.soundOn !== false); setMotionOn(!p.reduceMotion); setProgress(p); } });
     // warm the voice list
     try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch (e) {}
     return () => { live = false; };
@@ -1332,7 +1413,8 @@ export default function App() {
                 onSetGoal={(g) => { const p = { ...progress, goal: g }; setProgress(p); saveProgress(p); }}
                 onToggleSound={() => { const v = !(progress.soundOn !== false); setSoundOn(v); const p = { ...progress, soundOn: v }; setProgress(p); saveProgress(p); }}
                 onToggleAudioEx={() => { const p = { ...progress, audioExercises: !(progress.audioExercises !== false) }; setProgress(p); saveProgress(p); }}
-                onReset={() => { const p = { ...DEFAULT_PROGRESS, units: {} }; setSoundOn(true); setProgress(p); saveProgress(p); }}
+                onToggleMotion={() => { const v = !progress.reduceMotion; setMotionOn(!v); const p = { ...progress, reduceMotion: v }; setProgress(p); saveProgress(p); }}
+                onReset={() => { const p = { ...DEFAULT_PROGRESS, units: {} }; setSoundOn(true); setMotionOn(true); setProgress(p); saveProgress(p); }}
               />
             )}
           </main>
@@ -1403,6 +1485,54 @@ button { font-family: inherit; cursor: pointer; }
 .mile-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 19px; }
 .mile-sub { font-size: 13px; opacity: .92; }
 .crown { position: absolute; top: -12px; right: 12px; font-size: 26px; filter: drop-shadow(0 2px 0 rgba(0,0,0,.15)); }
+.mile-guide {
+  position: absolute; bottom: 12px; right: 12px; border: none; border-radius: 999px;
+  background: rgba(255,255,255,.22); color: #fff; font-family: 'Baloo 2', sans-serif;
+  font-weight: 700; font-size: 12px; padding: 4px 10px;
+}
+.mile-guide:active { background: rgba(255,255,255,.34); }
+
+/* Modal (guidebook) */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 40; background: rgba(36,49,42,.5);
+  display: flex; align-items: flex-end; justify-content: center; animation: fade .18s ease;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.modal-sheet {
+  width: 100%; max-width: 430px; max-height: 82vh; background: #F7F9F4;
+  border-radius: 20px 20px 0 0; padding: 18px 18px 26px; display: flex; flex-direction: column;
+  animation: rise .24s ease;
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; }
+.modal-x { background: none; border: none; font-size: 20px; color: #97A59B; padding: 4px; }
+.modal-sub { color: #6B7A70; font-size: 13px; font-weight: 600; margin: 2px 0 14px; }
+.modal-body { overflow-y: auto; }
+
+/* Combo overlay */
+.combo-pop {
+  position: absolute; top: 22%; left: 50%; transform: translateX(-50%); z-index: 30;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none;
+  animation: comboIn .95s ease forwards;
+}
+.combo-pop.static { animation: none; }
+.combo-emoji { font-size: 54px; }
+.combo-num { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 22px; color: #D97316; }
+@keyframes comboIn {
+  0% { opacity: 0; transform: translateX(-50%) scale(.5); }
+  25% { opacity: 1; transform: translateX(-50%) scale(1.1); }
+  70% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1) translateY(-20px); }
+}
+
+/* Achievements */
+.ach-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.ach {
+  background: #fff; border: 2px solid #E3E8E0; border-radius: 14px; padding: 12px 6px;
+  text-align: center; opacity: .45; filter: grayscale(1);
+}
+.ach.earned { opacity: 1; filter: none; border-color: #F2C94C; }
+.ach-icon { font-size: 26px; }
+.ach-label { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 11px; color: #24312A; margin-top: 4px; }
 
 .stones {
   display: flex; flex-direction: column; align-items: center; gap: 22px;
