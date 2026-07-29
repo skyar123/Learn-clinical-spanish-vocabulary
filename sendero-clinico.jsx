@@ -614,6 +614,13 @@ const DEFAULT_PROGRESS = {
 // Stat key for one vocabulary item.
 const statKey = (item) => `${item.unitId || "?"}|${item.es}`;
 
+// A crowned unit is due for review once this long has passed since its last session.
+const REVIEW_AFTER = 3 * 24 * 60 * 60 * 1000; // 3 days
+const unitDueForReview = (u, progress) => {
+  const d = progress.units[u.id];
+  return !!(d && d.done === 3 && (!d.ts || Date.now() - d.ts > REVIEW_AFTER));
+};
+
 const loadProgress = async () => {
   try {
     const res = await window.storage.get(STORAGE_KEY);
@@ -1029,7 +1036,7 @@ function Guidebook({ unit, onClose }) {
   );
 }
 
-function Trail({ progress, onStart }) {
+function Trail({ progress, onStart, onReview }) {
   const [guide, setGuide] = useState(null);
   const isUnitUnlocked = (i) => {
     if (progress.freeMode || i === 0) return true;
@@ -1043,16 +1050,20 @@ function Trail({ progress, onStart }) {
       {UNITS.map((u, ui) => {
         const unlocked = isUnitUnlocked(ui);
         const done = progress.units[u.id]?.done || 0;
+        const due = unitDueForReview(u, progress);
         return (
           <section key={u.id} className="etapa">
-            <div className="milepost" style={{ background: unlocked ? u.color : "#B9C2BB", boxShadow: `0 4px 0 ${unlocked ? u.dark : "#96A099"}` }}>
+            <div className={"milepost" + (due ? " due" : "")} style={{ background: unlocked ? u.color : "#B9C2BB", boxShadow: `0 4px 0 ${unlocked ? u.dark : "#96A099"}` }}>
               <div className="mile-num">ETAPA {ui + 1}</div>
               <div className="mile-title">{u.icon} {u.title}</div>
               <div className="mile-sub">{u.subtitle}</div>
+              {due && (
+                <button className="mile-review" onClick={() => onReview(u)} aria-label={`Review ${u.title}`}>🔄 Repasar</button>
+              )}
               {unlocked && (
                 <button className="mile-guide" onClick={() => setGuide(u)} aria-label={`Open guidebook for ${u.title}`}>📖 Guía</button>
               )}
-              {done === 3 && <div className="crown">👑</div>}
+              {done === 3 && <div className={"crown" + (due ? " cracked" : "")}>👑</div>}
             </div>
             <div className="stones">
               {[0, 1, 2].map((li) => {
@@ -1320,6 +1331,17 @@ export default function App() {
     });
   };
 
+  const startUnitReview = (unit) => {
+    beginSession({
+      title: `Repaso: ${unit.title}`,
+      color: unit.color,
+      dark: unit.dark,
+      queue: applyAudioPref(buildLessonQueue(unit, 2), progress.audioExercises !== false),
+      isPractice: true,
+      reviewUnitId: unit.id,
+    });
+  };
+
   const startPractice = (unlockedUnits) => {
     beginSession({
       title: "Práctica mixta",
@@ -1372,8 +1394,14 @@ export default function App() {
     }
 
     if (!session.isPractice) {
-      const cur = p.units[session.unitId]?.done || 0;
-      if (session.lessonIdx === cur && cur < 3) p.units[session.unitId] = { done: cur + 1 };
+      const prev = p.units[session.unitId] || {};
+      const cur = prev.done || 0;
+      const done = session.lessonIdx === cur && cur < 3 ? cur + 1 : cur;
+      p.units[session.unitId] = { ...prev, done, ts: Date.now() };
+    } else if (session.reviewUnitId) {
+      // A unit review refreshes the spaced-repetition clock without changing progress.
+      const prev = p.units[session.reviewUnitId] || {};
+      p.units[session.reviewUnitId] = { ...prev, ts: Date.now() };
     }
 
     setProgress(p);
@@ -1426,7 +1454,7 @@ export default function App() {
             </div>
           </header>
           <main className="main-scroll">
-            {tab === "trail" && <Trail progress={progress} onStart={startLesson} />}
+            {tab === "trail" && <Trail progress={progress} onStart={startLesson} onReview={startUnitReview} />}
             {tab === "practice" && <PracticeTab progress={progress} onStart={startPractice} />}
             {tab === "words" && <GlossaryTab progress={progress} />}
             {tab === "profile" && (
@@ -1530,6 +1558,18 @@ button { font-family: inherit; cursor: pointer; }
   font-weight: 700; font-size: 12px; padding: 4px 10px;
 }
 .mile-guide:active { background: rgba(255,255,255,.34); }
+.mile-review {
+  position: absolute; bottom: 12px; left: 12px; border: none; border-radius: 999px;
+  background: rgba(255,255,255,.9); color: #A83641; font-family: 'Baloo 2', sans-serif;
+  font-weight: 800; font-size: 12px; padding: 4px 11px;
+}
+.mile-review:active { background: #fff; }
+.milepost.due { opacity: .92; }
+.milepost.due::after {
+  content: ""; position: absolute; inset: 0; border-radius: 18px;
+  border: 2px dashed rgba(255,255,255,.7); pointer-events: none;
+}
+.crown.cracked { opacity: .55; }
 
 /* Modal (guidebook) */
 .modal-scrim {
