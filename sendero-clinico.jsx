@@ -442,11 +442,16 @@ const isYesterday = (key) => {
   return key === y;
 };
 
+// Global sound switch, mirrored from progress.soundOn. Audio helpers respect it.
+let soundOn = true;
+const setSoundOn = (v) => { soundOn = v; };
+
 // Speech: pronounce Spanish text if a voice exists. Fails silently.
+// Pass slow=true for a half-speed pass (the turtle button).
 let cachedVoice = null;
-const speak = (text) => {
+const speak = (text, slow) => {
   try {
-    if (!window.speechSynthesis) return;
+    if (!soundOn || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     if (!cachedVoice) {
@@ -458,7 +463,7 @@ const speak = (text) => {
     }
     if (cachedVoice) u.voice = cachedVoice;
     u.lang = cachedVoice ? cachedVoice.lang : "es-MX";
-    u.rate = 0.92;
+    u.rate = slow ? 0.5 : 0.92;
     window.speechSynthesis.speak(u);
   } catch (e) {
     /* no audio available */
@@ -469,6 +474,7 @@ const speak = (text) => {
 let audioCtx = null;
 const tone = (freqs, dur = 0.12, type = "sine", gainVal = 0.08) => {
   try {
+    if (!soundOn) return;
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     freqs.forEach((f, i) => {
       const o = audioCtx.createOscillator();
@@ -543,30 +549,62 @@ const makeMatch = (items) => {
   };
 };
 
+// Attach the unit id so an item can be found in itemStats later.
+const tag = (item, unitId) => ({ ...item, unitId });
+
 const buildLessonQueue = (unit, lessonIdx) => {
   let slice;
   if (lessonIdx === 0) slice = unit.items.slice(0, 6);
   else if (lessonIdx === 1) slice = unit.items.slice(6, 12);
   else slice = sample(unit.items, 8);
+  slice = slice.map((it) => tag(it, unit.id));
   const q = shuffle(slice).map((item, i) => makeExercise(item, unit, i));
   const match = makeMatch(slice);
   if (match) q.splice(Math.min(3, q.length), 0, match);
   return q;
 };
 
-const buildPracticeQueue = (unlockedUnits) => {
-  const pool = unlockedUnits.flatMap((u) => u.items.map((it) => ({ it, u })));
-  const picked = sample(pool, 8);
+// A missed item's difficulty ratio: wrong / max(seen, 1). Items never missed score 0.
+const weakness = (item, itemStats) => {
+  const s = itemStats && itemStats[statKey(item)];
+  if (!s || !s.wrong) return 0;
+  return s.wrong / Math.max(s.seen, 1);
+};
+
+// Count of unlocked items the learner has missed at least once.
+const weakCount = (unlockedUnits, itemStats) =>
+  unlockedUnits.reduce((n, u) => n + u.items.filter((it) => weakness(tag(it, u.id), itemStats) > 0).length, 0);
+
+const buildPracticeQueue = (unlockedUnits, itemStats) => {
+  const pool = unlockedUnits.flatMap((u) => u.items.map((it) => ({ it: tag(it, u.id), u })));
+  // Missed items come first, hardest first; the rest fill in at random.
+  const weak = pool.filter((p) => weakness(p.it, itemStats) > 0)
+    .sort((a, b) => weakness(b.it, itemStats) - weakness(a.it, itemStats));
+  const rest = shuffle(pool.filter((p) => weakness(p.it, itemStats) === 0));
+  const picked = [...weak, ...rest].slice(0, 8);
   const q = picked.map(({ it, u }, i) => makeExercise(it, u, i));
   const match = makeMatch(picked.map((p) => p.it));
   if (match) q.splice(4, 0, match);
   return q;
 };
 
+// When listening exercises are turned off, serve the visible multiple-choice variant instead.
+const applyAudioPref = (queue, audioOn) =>
+  audioOn ? queue : queue.map((ex) =>
+    ex.type === "listen_pick" ? { type: "mcq_es_en", item: ex.item, options: ex.options } : ex
+  );
+
 // ---------- PERSISTENCE ----------
 
 const STORAGE_KEY = "sendero-clinico-v1";
-const DEFAULT_PROGRESS = { xp: 0, streak: 0, lastDay: null, freeMode: false, units: {}, goal: 20, xpToday: 0, xpDay: null };
+const DEFAULT_PROGRESS = {
+  xp: 0, streak: 0, lastDay: null, freeMode: false, units: {},
+  goal: 20, xpToday: 0, xpDay: null,
+  itemStats: {}, soundOn: true, audioExercises: true,
+};
+
+// Stat key for one vocabulary item.
+const statKey = (item) => `${item.unitId || "?"}|${item.es}`;
 
 const loadProgress = async () => {
   try {
@@ -664,6 +702,7 @@ function ListenExercise({ ex, selected, onSelect, locked }) {
       <div className="ex-prompt-label">Listen, then choose the meaning</div>
       <div className="listen-row">
         <button className="listen-btn" onClick={() => speak(ex.item.es)} aria-label="Play audio">🔊</button>
+        <button className="turtle-btn" onClick={() => speak(ex.item.es, true)} aria-label="Play slowly">🐢</button>
         {revealed ? (
           <div className="listen-reveal">{ex.item.es}</div>
         ) : (
@@ -790,7 +829,7 @@ function MatchExercise({ ex, onMistake, onDone }) {
 
 // ---------- LESSON SCREEN ----------
 
-function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
+function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onItemResult }) {
   const [items, setItems] = useState(initialQueue);
   const [idx, setIdx] = useState(0);
   const [solved, setSolved] = useState(0);
@@ -800,6 +839,8 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
   const [selected, setSelected] = useState(null);
   const [typed, setTyped] = useState("");
   const [picked, setPicked] = useState([]);
+  // Unique items missed this session, for the post-lesson review (keyed to dedupe).
+  const missedRef = useRef(new Map());
 
   const ex = items[idx];
   const total = items.length;
@@ -817,6 +858,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
     } else if (ex.type === "build") {
       ok = picked.map((t) => t.word).join(" ") === ex.target.join(" ");
     }
+    if (onItemResult) onItemResult(ex.item, ok);
     if (ok) {
       playCorrect();
       setSolved((s) => s + 1);
@@ -825,6 +867,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
     } else {
       playWrong();
       loseHeart();
+      if (!missedRef.current.has(statKey(ex.item))) missedRef.current.set(statKey(ex.item), ex.item);
       // Ask it again later. Typing falls back to multiple choice, and a
       // listening item comes back as visible text so a missing voice can't trap it.
       let retry;
@@ -843,7 +886,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
   const advance = () => {
     const next = idx + 1;
     if (next >= items.length) {
-      onFinish({ mistakes, total: items.length });
+      onFinish({ mistakes, total: items.length, missed: [...missedRef.current.values()] });
     } else {
       setIdx(next);
       resetInputs();
@@ -903,8 +946,9 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
 
 // ---------- COMPLETE SCREEN ----------
 
-function CompleteScreen({ result, onContinue }) {
+function CompleteScreen({ result, onContinue, onReview }) {
   const acc = Math.max(0, Math.round(((result.total - result.mistakes) / result.total) * 100));
+  const missed = result.missed || [];
   return (
     <div className="screen complete-screen">
       <div className="confetti" aria-hidden="true">
@@ -925,6 +969,11 @@ function CompleteScreen({ result, onContinue }) {
       {result.streakUp && <div className="streak-note">🔥 ¡Racha de {result.streak} {result.streak === 1 ? "día" : "días"}!</div>}
       {result.goalHit && <div className="goal-note">🎯 ¡Meta diaria cumplida!</div>}
       <div className="complete-footer">
+        {missed.length > 0 && (
+          <div className="review-slot">
+            <Chunky full ghost color="#2E7DD1" onClick={() => onReview(missed)}>REPASAR ERRORES ({missed.length})</Chunky>
+          </div>
+        )}
         <Chunky full onClick={onContinue}>CONTINUAR</Chunky>
       </div>
     </div>
@@ -988,6 +1037,8 @@ function PracticeTab({ progress, onStart }) {
     const d = progress.units[u.id].done;
     return n + (d >= 2 ? u.items.length : 6);
   }, 0);
+  const weak = weakCount(unlocked, progress.itemStats);
+  const focusWeak = weak >= 3;
   return (
     <div className="pad-screen">
       <h2 className="tab-title">Práctica</h2>
@@ -1000,16 +1051,31 @@ function PracticeTab({ progress, onStart }) {
         <div className="practice-card">
           <div className="empty-emoji">🎒</div>
           <p><b>{wordCount}</b> words and phrases in your pack, from <b>{unlocked.length}</b> {unlocked.length === 1 ? "unit" : "units"}.</p>
-          <p className="muted">A quick mixed session. Wrong answers come back around until you get them.</p>
-          <Chunky full color="#2E7DD1" dark="#1F5C9E" onClick={() => onStart(unlocked)}>EMPEZAR PRÁCTICA · +10 XP</Chunky>
+          <p className="muted">
+            {focusWeak
+              ? `A mixed session that leads with the ${weak} words you have missed before.`
+              : "A quick mixed session. Wrong answers come back around until you get them."}
+          </p>
+          <Chunky full color="#2E7DD1" dark="#1F5C9E" onClick={() => onStart(unlocked)}>
+            {focusWeak ? "REPASAR PALABRAS DIFÍCILES · +10 XP" : "EMPEZAR PRÁCTICA · +10 XP"}
+          </Chunky>
         </div>
       )}
     </div>
   );
 }
 
+// Word strength from the weak-word stats: strong, weak, or new (unseen).
+const strengthOf = (item, itemStats) => {
+  const s = itemStats && itemStats[statKey(item)];
+  if (!s || !s.seen) return { cls: "new", label: "nuevo" };
+  if (s.wrong / s.seen >= 0.34) return { cls: "weak", label: "flojo" };
+  return { cls: "strong", label: "firme" };
+};
+
 function GlossaryTab({ progress }) {
   const shown = UNITS.filter((u) => progress.freeMode || (progress.units[u.id]?.done || 0) > 0);
+  const stats = progress.itemStats || {};
   return (
     <div className="pad-screen">
       <h2 className="tab-title">Palabras</h2>
@@ -1026,15 +1092,19 @@ function GlossaryTab({ progress }) {
           return (
             <section key={u.id} className="gloss-unit">
               <div className="gloss-head">{u.icon} {u.title}</div>
-              {items.map((it) => (
-                <div key={u.id + "|" + it.es} className="gloss-row">
-                  <div className="gloss-text">
-                    <div className="gloss-es">{it.es}</div>
-                    <div className="gloss-en">{it.en}</div>
+              {items.map((it) => {
+                const st = strengthOf({ ...it, unitId: u.id }, stats);
+                return (
+                  <div key={u.id + "|" + it.es} className="gloss-row">
+                    <div className="gloss-text">
+                      <div className="gloss-es">{it.es}</div>
+                      <div className="gloss-en">{it.en}</div>
+                    </div>
+                    <span className={"strength " + st.cls}>{st.label}</span>
+                    <SpeakBtn text={it.es} color={u.dark} />
                   </div>
-                  <SpeakBtn text={it.es} color={u.dark} />
-                </div>
-              ))}
+                );
+              })}
             </section>
           );
         })
@@ -1043,7 +1113,7 @@ function GlossaryTab({ progress }) {
   );
 }
 
-function ProfileTab({ progress, onToggleFree, onSetGoal, onReset }) {
+function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggleAudioEx, onReset }) {
   const crowns = UNITS.filter((u) => (progress.units[u.id]?.done || 0) === 3).length;
   const [confirming, setConfirming] = useState(false);
   return (
@@ -1076,6 +1146,24 @@ function ProfileTab({ progress, onToggleFree, onSetGoal, onReset }) {
       </div>
       <div className="setting-card">
         <div>
+          <b>Sonido</b>
+          <div className="muted">Pronunciations and the little correct and wrong chimes.</div>
+        </div>
+        <button className={"toggle" + (progress.soundOn !== false ? " on" : "")} onClick={onToggleSound} aria-label="Toggle sound">
+          <span className="knob" />
+        </button>
+      </div>
+      <div className="setting-card">
+        <div>
+          <b>Ejercicios de escucha</b>
+          <div className="muted">Listening questions. Turn off in a quiet place, and they become visible multiple choice.</div>
+        </div>
+        <button className={"toggle" + (progress.audioExercises !== false ? " on" : "")} onClick={onToggleAudioEx} aria-label="Toggle listening exercises">
+          <span className="knob" />
+        </button>
+      </div>
+      <div className="setting-card">
+        <div>
           <b>Fuente</b>
           <div className="muted">PASEO Salud Mental, Clinical Spanish for Mental Health workbook (Kohrt, 2022). Vocabulary drawn from its Vocabulario útil sections.</div>
         </div>
@@ -1102,21 +1190,26 @@ export default function App() {
   const [tab, setTab] = useState("trail");
   const [session, setSession] = useState(null); // {title,color,dark,queue,unitId,lessonIdx,isPractice}
   const [result, setResult] = useState(null);
+  // Item results pending for the active session, merged into itemStats on finish.
+  const pendingStatsRef = useRef([]);
 
   useEffect(() => {
     let live = true;
-    loadProgress().then((p) => { if (live) setProgress(p); });
+    loadProgress().then((p) => { if (live) { setSoundOn(p.soundOn !== false); setProgress(p); } });
     // warm the voice list
     try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch (e) {}
     return () => { live = false; };
   }, []);
 
+  const beginSession = (s) => { pendingStatsRef.current = []; setSession(s); };
+  const recordItem = (item, ok) => { pendingStatsRef.current.push({ key: statKey(item), ok }); };
+
   const startLesson = (unit, lessonIdx) => {
-    setSession({
+    beginSession({
       title: unit.title,
       color: unit.color,
       dark: unit.dark,
-      queue: buildLessonQueue(unit, lessonIdx),
+      queue: applyAudioPref(buildLessonQueue(unit, lessonIdx), progress.audioExercises !== false),
       unitId: unit.id,
       lessonIdx,
       isPractice: false,
@@ -1124,21 +1217,42 @@ export default function App() {
   };
 
   const startPractice = (unlockedUnits) => {
-    setSession({
+    beginSession({
       title: "Práctica mixta",
       color: "#2E7DD1",
       dark: "#1F5C9E",
-      queue: buildPracticeQueue(unlockedUnits),
+      queue: applyAudioPref(buildPracticeQueue(unlockedUnits, progress.itemStats), progress.audioExercises !== false),
       isPractice: true,
     });
   };
 
-  const finishLesson = ({ mistakes, total }) => {
+  const startReview = (missed) => {
+    const queue = missed.map((item, i) => makeExercise(item, { items: ALL_ITEMS }, i));
+    beginSession({
+      title: "Repaso de errores",
+      color: "#2E7DD1",
+      dark: "#1F5C9E",
+      queue: applyAudioPref(queue, progress.audioExercises !== false),
+      isPractice: true,
+    });
+    setResult(null);
+  };
+
+  const finishLesson = ({ mistakes, total, missed }) => {
     playFinish();
     const perfect = mistakes === 0;
     const xpEarned = 10 + (perfect ? 5 : 0);
     const p = { ...progress, units: { ...progress.units } };
     p.xp += xpEarned;
+
+    // Fold this session's answers into the weak-word stats.
+    const stats = { ...(progress.itemStats || {}) };
+    pendingStatsRef.current.forEach(({ key, ok }) => {
+      const s = stats[key] || { seen: 0, wrong: 0 };
+      stats[key] = { seen: s.seen + 1, wrong: s.wrong + (ok ? 0 : 1) };
+    });
+    pendingStatsRef.current = [];
+    p.itemStats = stats;
 
     const today = todayKey();
     if (p.xpDay !== today) { p.xpDay = today; p.xpToday = 0; }
@@ -1160,7 +1274,7 @@ export default function App() {
 
     setProgress(p);
     saveProgress(p);
-    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit });
+    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [] });
     setSession(null);
   };
 
@@ -1182,10 +1296,11 @@ export default function App() {
           dark={session.dark}
           initialQueue={session.queue}
           onFinish={finishLesson}
-          onQuit={() => setSession(null)}
+          onQuit={() => { pendingStatsRef.current = []; setSession(null); }}
+          onItemResult={recordItem}
         />
       ) : result ? (
-        <CompleteScreen result={result} onContinue={() => setResult(null)} />
+        <CompleteScreen result={result} onContinue={() => setResult(null)} onReview={startReview} />
       ) : (
         <>
           <header className="app-header">
@@ -1215,7 +1330,9 @@ export default function App() {
                 progress={progress}
                 onToggleFree={() => { const p = { ...progress, freeMode: !progress.freeMode }; setProgress(p); saveProgress(p); }}
                 onSetGoal={(g) => { const p = { ...progress, goal: g }; setProgress(p); saveProgress(p); }}
-                onReset={() => { const p = { ...DEFAULT_PROGRESS, units: {} }; setProgress(p); saveProgress(p); }}
+                onToggleSound={() => { const v = !(progress.soundOn !== false); setSoundOn(v); const p = { ...progress, soundOn: v }; setProgress(p); saveProgress(p); }}
+                onToggleAudioEx={() => { const p = { ...progress, audioExercises: !(progress.audioExercises !== false) }; setProgress(p); saveProgress(p); }}
+                onReset={() => { const p = { ...DEFAULT_PROGRESS, units: {} }; setSoundOn(true); setProgress(p); saveProgress(p); }}
               />
             )}
           </main>
@@ -1358,6 +1475,12 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: 0 5px 0 #1F5C9E; transition: transform .08s ease;
 }
 .listen-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #1F5C9E; }
+.turtle-btn {
+  width: 56px; height: 56px; border-radius: 50%; border: 2px solid #CFE3F6; flex-shrink: 0;
+  background: #EAF3FC; color: #1F5C9E; font-size: 24px; box-shadow: 0 4px 0 #CFE3F6;
+  transition: transform .08s ease;
+}
+.turtle-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #CFE3F6; }
 .listen-cant { background: none; border: none; color: #6B7A70; font-weight: 700; font-size: 14px; text-decoration: underline; text-align: left; }
 .listen-reveal {
   font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #24312A;
@@ -1486,6 +1609,14 @@ button { font-family: inherit; cursor: pointer; }
 .gloss-text { min-width: 0; }
 .gloss-es { font-weight: 700; font-size: 16px; color: #24312A; }
 .gloss-en { color: #6B7A70; font-size: 13px; font-weight: 600; margin-top: 1px; }
+.strength {
+  font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: .5px;
+  padding: 2px 8px; border-radius: 999px; flex-shrink: 0; text-transform: uppercase;
+}
+.strength.new { color: #6B7A70; background: #EEF1EC; }
+.strength.strong { color: #2E7D45; background: #EAF7EC; }
+.strength.weak { color: #A83641; background: #FBEBEC; }
+.review-slot { margin-bottom: 12px; }
 
 button:focus-visible { outline: 3px solid #2E7DD1; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
