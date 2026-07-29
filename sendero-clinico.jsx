@@ -519,9 +519,10 @@ const makeExercise = (item, unit, idx) => {
   if (item.phrase) {
     return idx % 2 === 0 ? makeBuild(item) : { type: "mcq_es_en", item, options: mcqOptions(item, "en", unit) };
   }
-  const cycle = ["mcq_en_es", "mcq_es_en", "type_es"];
-  const type = cycle[idx % 3];
+  const cycle = ["mcq_en_es", "listen_pick", "mcq_es_en", "type_es"];
+  const type = cycle[idx % 4];
   if (type === "type_es") return { type, item };
+  if (type === "listen_pick") return { type, item, options: mcqOptions(item, "en", unit) };
   return { type, item, options: mcqOptions(item, type === "mcq_en_es" ? "es" : "en", unit) };
 };
 
@@ -655,6 +656,37 @@ function McqExercise({ ex, selected, onSelect, locked, esToEn }) {
   );
 }
 
+function ListenExercise({ ex, selected, onSelect, locked }) {
+  const [revealed, setRevealed] = useState(false);
+  useEffect(() => { speak(ex.item.es); }, []);
+  return (
+    <div className="ex-wrap">
+      <div className="ex-prompt-label">Listen, then choose the meaning</div>
+      <div className="listen-row">
+        <button className="listen-btn" onClick={() => speak(ex.item.es)} aria-label="Play audio">🔊</button>
+        {revealed ? (
+          <div className="listen-reveal">{ex.item.es}</div>
+        ) : (
+          <button className="listen-cant" onClick={() => setRevealed(true)}>No puedo escuchar ahora</button>
+        )}
+      </div>
+      <div className="opt-list">
+        {ex.options.map((opt, i) => (
+          <button
+            key={i}
+            className={"opt" + (selected === i ? " sel" : "")}
+            disabled={locked}
+            onClick={() => onSelect(i)}
+          >
+            <span className="opt-num">{i + 1}</span>
+            {opt.en}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TypeExercise({ ex, value, onChange, locked }) {
   return (
     <div className="ex-wrap">
@@ -778,7 +810,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
 
   const check = () => {
     let ok = false;
-    if (ex.type === "mcq_es_en" || ex.type === "mcq_en_es") {
+    if (ex.type === "mcq_es_en" || ex.type === "mcq_en_es" || ex.type === "listen_pick") {
       ok = selected !== null && ex.options[selected].en === ex.item.en;
     } else if (ex.type === "type_es") {
       ok = answerMatches(typed, ex.item);
@@ -793,10 +825,16 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
     } else {
       playWrong();
       loseHeart();
-      // Ask it again later, as multiple choice if typing stumped them
-      const retry = ex.type === "type_es"
-        ? { type: "mcq_en_es", item: ex.item, options: mcqOptions(ex.item, "es", { items: ALL_ITEMS }) }
-        : { ...ex, tiles: ex.tiles ? shuffle(ex.tiles) : undefined, options: ex.options ? shuffle(ex.options) : undefined };
+      // Ask it again later. Typing falls back to multiple choice, and a
+      // listening item comes back as visible text so a missing voice can't trap it.
+      let retry;
+      if (ex.type === "type_es") {
+        retry = { type: "mcq_en_es", item: ex.item, options: mcqOptions(ex.item, "es", { items: ALL_ITEMS }) };
+      } else if (ex.type === "listen_pick") {
+        retry = { type: "mcq_es_en", item: ex.item, options: mcqOptions(ex.item, "en", { items: ALL_ITEMS }) };
+      } else {
+        retry = { ...ex, tiles: ex.tiles ? shuffle(ex.tiles) : undefined, options: ex.options ? shuffle(ex.options) : undefined };
+      }
       setItems((arr) => [...arr, retry]);
       setPhase("bad");
     }
@@ -815,7 +853,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
   const matchDone = () => { setSolved((s) => s + 1); setPhase("good"); };
 
   const canCheck =
-    ex && ((ex.type.startsWith("mcq") && selected !== null) ||
+    ex && (((ex.type.startsWith("mcq") || ex.type === "listen_pick") && selected !== null) ||
       (ex.type === "type_es" && typed.trim().length > 0) ||
       (ex.type === "build" && picked.length > 0));
 
@@ -828,6 +866,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit }) {
         <div className="lesson-title" style={{ color: dark }}>{title}</div>
         {ex.type === "mcq_es_en" && <McqExercise ex={ex} selected={selected} onSelect={setSelected} locked={phase !== "answer"} esToEn={true} />}
         {ex.type === "mcq_en_es" && <McqExercise ex={ex} selected={selected} onSelect={setSelected} locked={phase !== "answer"} esToEn={false} />}
+        {ex.type === "listen_pick" && <ListenExercise key={idx} ex={ex} selected={selected} onSelect={setSelected} locked={phase !== "answer"} />}
         {ex.type === "type_es" && <TypeExercise ex={ex} value={typed} onChange={setTyped} locked={phase !== "answer"} />}
         {ex.type === "build" && <BuildExercise ex={ex} picked={picked} setPicked={setPicked} locked={phase !== "answer"} />}
         {ex.type === "match" && <MatchExercise key={idx} ex={ex} onMistake={loseHeart} onDone={matchDone} />}
@@ -1283,6 +1322,19 @@ button { font-family: inherit; cursor: pointer; }
   font-size: 12px; font-weight: 700; color: #97A59B; flex-shrink: 0;
 }
 .opt.sel .opt-num { border-color: #2E7DD1; color: #1F5C9E; }
+
+.listen-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.listen-btn {
+  width: 76px; height: 76px; border-radius: 50%; border: none; flex-shrink: 0;
+  background: #2E7DD1; color: #fff; font-size: 32px;
+  box-shadow: 0 5px 0 #1F5C9E; transition: transform .08s ease;
+}
+.listen-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #1F5C9E; }
+.listen-cant { background: none; border: none; color: #6B7A70; font-weight: 700; font-size: 14px; text-decoration: underline; text-align: left; }
+.listen-reveal {
+  font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #24312A;
+  background: #EAF3FC; border: 2px solid #CFE3F6; border-radius: 12px; padding: 8px 12px;
+}
 
 .type-box {
   width: 100%; border: 2px solid #E3E8E0; border-radius: 14px; padding: 14px;
