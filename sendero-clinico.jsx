@@ -617,7 +617,37 @@ const DEFAULT_PROGRESS = {
   xp: 0, streak: 0, lastDay: null, freeMode: false, units: {},
   goal: 20, xpToday: 0, xpDay: null,
   itemStats: {}, soundOn: true, audioExercises: true, reduceMotion: false, theme: "auto",
+  gems: 0, freezes: 0, lessonsToday: 0, itemsToday: 0, questDay: null, questsClaimed: [],
 };
+
+// ---- Daily quests + gems ----
+const QUEST_REWARD = 10; // gems per quest
+const FREEZE_COST = 30;  // gems for one streak protection
+const QUEST_DEFS = [
+  { id: "xp", icon: "⚡", metric: "xp", targets: [20, 30, 40], label: (n) => `Gana ${n} XP hoy` },
+  { id: "lessons", icon: "📚", metric: "lessons", targets: [2, 3], label: (n) => `Completa ${n} lecciones` },
+  { id: "items", icon: "🎯", metric: "items", targets: [20, 30], label: (n) => `Responde ${n} palabras` },
+];
+const dayHash = (key) => { let h = 0; for (const c of key || "") h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+// Three quests per day, with targets seeded by the date so they vary day to day.
+const dailyQuests = (dayKey) => {
+  const h = dayHash(dayKey);
+  return QUEST_DEFS.map((q, i) => {
+    const goal = q.targets[(h >> (i * 3)) % q.targets.length];
+    return { id: q.id, icon: q.icon, metric: q.metric, goal, label: q.label(goal) };
+  });
+};
+// Today's counters and claims, accounting for a day rollover before any lesson resets them.
+const todayCounters = (p) => {
+  const fresh = p.xpDay === todayKey();
+  return {
+    xp: fresh ? p.xpToday || 0 : 0,
+    lessons: fresh ? p.lessonsToday || 0 : 0,
+    items: fresh ? p.itemsToday || 0 : 0,
+    claimed: p.questDay === todayKey() ? p.questsClaimed || [] : [],
+  };
+};
+const questMetric = (counters, metric) => counters[metric] || 0;
 
 // Stat key for one vocabulary item.
 const statKey = (item) => `${item.unitId || "?"}|${item.es}`;
@@ -1031,6 +1061,7 @@ function CompleteScreen({ result, onContinue, onReview }) {
       {result.streakUp && <div className="streak-note">🔥 ¡Racha de {result.streak} {result.streak === 1 ? "día" : "días"}!</div>}
       {result.goalHit && <div className="goal-note">🎯 ¡Meta diaria cumplida!</div>}
       {result.legendaryDone && <div className="legend-note">🌟 ¡Nivel legendario!</div>}
+      {result.freezeUsed && <div className="streak-note">🛡️ Protección de racha usada</div>}
       <div className="complete-footer">
         {missed.length > 0 && (
           <div className="review-slot">
@@ -1070,7 +1101,40 @@ function Guidebook({ unit, onClose }) {
   );
 }
 
-function Trail({ progress, onStart, onReview, onLegendary }) {
+function QuestsCard({ progress, onClaimQuest }) {
+  const counters = todayCounters(progress);
+  const quests = dailyQuests(todayKey());
+  return (
+    <div className="quests-card">
+      <div className="quests-head">🗒️ Misiones diarias</div>
+      {quests.map((q) => {
+        const have = questMetric(counters, q.metric);
+        const pct = Math.min(100, Math.round((have / q.goal) * 100));
+        const done = have >= q.goal;
+        const claimed = counters.claimed.includes(q.id);
+        return (
+          <div key={q.id} className="quest-row">
+            <div className="quest-icon">{q.icon}</div>
+            <div className="quest-main">
+              <div className="quest-label">{q.label}</div>
+              <div className="quest-track"><div className="quest-fill" style={{ width: pct + "%" }} /></div>
+              <div className="quest-count">{Math.min(have, q.goal)} / {q.goal}</div>
+            </div>
+            {claimed ? (
+              <span className="quest-claimed">✓</span>
+            ) : done ? (
+              <Chunky small color="#F2A93B" dark="#C4821F" onClick={() => onClaimQuest(q)}>+{QUEST_REWARD} 💎</Chunky>
+            ) : (
+              <span className="quest-reward">💎 {QUEST_REWARD}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Trail({ progress, onStart, onReview, onLegendary, onClaimQuest }) {
   const [guide, setGuide] = useState(null);
   const isUnitUnlocked = (i) => {
     if (progress.freeMode || i === 0) return true;
@@ -1081,6 +1145,7 @@ function Trail({ progress, onStart, onReview, onLegendary }) {
   return (
     <div className="trail">
       {guide && <Guidebook unit={guide} onClose={() => setGuide(null)} />}
+      <QuestsCard progress={progress} onClaimQuest={onClaimQuest} />
       {UNITS.map((u, ui) => {
         const unlocked = isUnitUnlocked(ui);
         const done = progress.units[u.id]?.done || 0;
@@ -1226,7 +1291,7 @@ const ACHIEVEMENTS = [
   { id: "full", icon: "🏔️", label: "Sendero completo", test: (p, crowns) => crowns === UNITS.length },
 ];
 
-function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggleAudioEx, onToggleMotion, onSetTheme, onReset }) {
+function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggleAudioEx, onToggleMotion, onSetTheme, onBuyFreeze, onReset }) {
   const theme = progress.theme || "auto";
   const crowns = UNITS.filter((u) => (progress.units[u.id]?.done || 0) === 3).length;
   const [confirming, setConfirming] = useState(false);
@@ -1248,6 +1313,13 @@ function ProfileTab({ progress, onToggleFree, onSetGoal, onToggleSound, onToggle
             </div>
           );
         })}
+      </div>
+      <div className="setting-card">
+        <div>
+          <b>Protección de racha 🛡️</b>
+          <div className="muted">You have {progress.freezes || 0}. If you miss a day, one is spent to keep your streak. Costs {FREEZE_COST} 💎.</div>
+        </div>
+        <Chunky small color="#2E7DD1" dark="#1F5C9E" disabled={(progress.gems || 0) < FREEZE_COST} onClick={onBuyFreeze}>Comprar</Chunky>
       </div>
       <div className="setting-card">
         <div>
@@ -1360,6 +1432,21 @@ export default function App() {
   const beginSession = (s) => { pendingStatsRef.current = []; setSession(s); };
   const recordItem = (item, ok) => { pendingStatsRef.current.push({ key: statKey(item), ok }); };
 
+  const claimQuest = (quest) => {
+    const c = todayCounters(progress);
+    if (c.claimed.includes(quest.id) || questMetric(c, quest.metric) < quest.goal) return;
+    const p = { ...progress, gems: (progress.gems || 0) + QUEST_REWARD };
+    p.questDay = todayKey();
+    p.questsClaimed = [...c.claimed, quest.id];
+    setProgress(p); saveProgress(p);
+  };
+
+  const buyFreeze = () => {
+    if ((progress.gems || 0) < FREEZE_COST) return;
+    const p = { ...progress, gems: progress.gems - FREEZE_COST, freezes: (progress.freezes || 0) + 1 };
+    setProgress(p); saveProgress(p);
+  };
+
   const startLesson = (unit, lessonIdx) => {
     beginSession({
       title: unit.title,
@@ -1423,6 +1510,7 @@ export default function App() {
     const p = { ...progress, units: { ...progress.units } };
     p.xp += xpEarned;
 
+    const itemsAnswered = pendingStatsRef.current.length;
     // Fold this session's answers into the weak-word stats.
     const stats = { ...(progress.itemStats || {}) };
     pendingStatsRef.current.forEach(({ key, ok }) => {
@@ -1433,14 +1521,28 @@ export default function App() {
     p.itemStats = stats;
 
     const today = todayKey();
-    if (p.xpDay !== today) { p.xpDay = today; p.xpToday = 0; }
+    // Roll the daily counters and quests over on a new day.
+    if (p.xpDay !== today) {
+      p.xpDay = today; p.xpToday = 0; p.lessonsToday = 0; p.itemsToday = 0;
+      p.questDay = today; p.questsClaimed = [];
+    }
     const beforeToday = p.xpToday;
     p.xpToday += xpEarned;
+    p.lessonsToday = (p.lessonsToday || 0) + 1;
+    p.itemsToday = (p.itemsToday || 0) + itemsAnswered;
     const goalHit = beforeToday < p.goal && p.xpToday >= p.goal;
 
     let streakUp = false;
+    let freezeUsed = false;
     if (p.lastDay !== today) {
-      p.streak = isYesterday(p.lastDay) ? p.streak + 1 : 1;
+      if (isYesterday(p.lastDay)) {
+        p.streak += 1;
+      } else if (p.lastDay && (p.freezes || 0) > 0) {
+        // A streak protection bridges the missed day(s) so the streak carries on.
+        p.freezes -= 1; p.streak += 1; freezeUsed = true;
+      } else {
+        p.streak = 1;
+      }
       p.lastDay = today;
       streakUp = true;
     }
@@ -1462,7 +1564,7 @@ export default function App() {
 
     setProgress(p);
     saveProgress(p);
-    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [], legendaryDone: !!session.legendaryUnitId, timeSec: timeSec || 0 });
+    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [], legendaryDone: !!session.legendaryUnitId, timeSec: timeSec || 0, freezeUsed });
     setSession(null);
   };
 
@@ -1509,10 +1611,11 @@ export default function App() {
                 );
               })()}
               <span className="pill gold">⚡ {progress.xp}</span>
+              <span className="pill gem">💎 {progress.gems || 0}</span>
             </div>
           </header>
           <main className="main-scroll">
-            {tab === "trail" && <Trail progress={progress} onStart={startLesson} onReview={startUnitReview} onLegendary={startLegendary} />}
+            {tab === "trail" && <Trail progress={progress} onStart={startLesson} onReview={startUnitReview} onLegendary={startLegendary} onClaimQuest={claimQuest} />}
             {tab === "practice" && <PracticeTab progress={progress} onStart={startPractice} />}
             {tab === "words" && <GlossaryTab progress={progress} />}
             {tab === "profile" && (
@@ -1524,6 +1627,7 @@ export default function App() {
                 onToggleAudioEx={() => { const p = { ...progress, audioExercises: !(progress.audioExercises !== false) }; setProgress(p); saveProgress(p); }}
                 onToggleMotion={() => { const v = !progress.reduceMotion; setMotionOn(!v); const p = { ...progress, reduceMotion: v }; setProgress(p); saveProgress(p); }}
                 onSetTheme={(t) => { const p = { ...progress, theme: t }; setProgress(p); saveProgress(p); }}
+                onBuyFreeze={buyFreeze}
                 onReset={() => { const p = { ...DEFAULT_PROGRESS, units: {} }; setSoundOn(true); setMotionOn(true); setProgress(p); saveProgress(p); }}
               />
             )}
@@ -1587,7 +1691,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .brand-name { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 21px; color: #2E7D45; line-height: 1.1; }
 .brand-sub { font-size: 12px; color: var(--muted); font-weight: 600; }
-.header-stats { display: flex; gap: 8px; }
+.header-stats { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pill {
   font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 14px;
   padding: 4px 10px; border-radius: 999px; background: var(--card); border: 2px solid var(--line);
@@ -1596,6 +1700,7 @@ button { font-family: inherit; cursor: pointer; }
 .pill.gold { color: #B8860B; }
 .pill.goal { color: var(--muted); }
 .pill.goal.met { color: #2E7D45; border-color: #3FA65C; background: #EAF7EC; }
+.pill.gem { color: #2E7DD1; }
 
 .main-scroll { flex: 1; overflow-y: auto; padding-bottom: 84px; }
 
@@ -1708,6 +1813,20 @@ button { font-family: inherit; cursor: pointer; }
 .stone.done { background: #F2C94C; color: #7A5A00; box-shadow: 0 6px 0 #C9A227; }
 .stone-tag { margin-top: 7px; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--bg); padding: 0 6px; border-radius: 6px; }
 .trail-end { text-align: center; color: var(--muted); font-family: 'Baloo 2', sans-serif; font-weight: 700; padding: 10px 0 26px; }
+
+/* Daily quests */
+.quests-card { background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 14px 14px 6px; margin-bottom: 18px; }
+.quests-head { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 15px; color: var(--ink); margin-bottom: 8px; }
+.quest-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.quest-row:first-of-type { border-top: none; }
+.quest-icon { font-size: 22px; width: 30px; text-align: center; flex-shrink: 0; }
+.quest-main { flex: 1; min-width: 0; }
+.quest-label { font-weight: 700; font-size: 14px; color: var(--ink); }
+.quest-track { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 5px 0 3px; }
+.quest-fill { height: 100%; background: #F2C94C; border-radius: 999px; transition: width .35s ease; }
+.quest-count { font-size: 11px; font-weight: 700; color: var(--muted); }
+.quest-reward { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.quest-claimed { color: #2E7D45; font-size: 20px; font-weight: 800; flex-shrink: 0; width: 28px; text-align: center; }
 
 /* Chunky buttons */
 .chunky {
