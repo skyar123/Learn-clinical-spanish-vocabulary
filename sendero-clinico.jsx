@@ -863,6 +863,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
   const [typed, setTyped] = useState("");
   const [picked, setPicked] = useState([]);
   const [failed, setFailed] = useState(false); // legendary: too many mistakes
+  const startRef = useRef(Date.now()); // for the time-spent stat
   // Unique items missed this session, for the post-lesson review (keyed to dedupe).
   const missedRef = useRef(new Map());
   const [combo, setCombo] = useState(0);
@@ -922,7 +923,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
   const advance = () => {
     const next = idx + 1;
     if (next >= items.length) {
-      onFinish({ mistakes, total: items.length, missed: [...missedRef.current.values()] });
+      onFinish({ mistakes, total: items.length, missed: [...missedRef.current.values()], timeSec: Math.round((Date.now() - startRef.current) / 1000) });
     } else {
       setIdx(next);
       resetInputs();
@@ -1004,6 +1005,8 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
 function CompleteScreen({ result, onContinue, onReview }) {
   const acc = Math.max(0, Math.round(((result.total - result.mistakes) / result.total) * 100));
   const missed = result.missed || [];
+  const t = result.timeSec || 0;
+  const timeStr = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
   return (
     <div className="screen complete-screen">
       <div className="confetti" aria-hidden="true">
@@ -1019,6 +1022,10 @@ function CompleteScreen({ result, onContinue, onReview }) {
         <div className="stat-card green">
           <div className="stat-label">Precisión</div>
           <div className="stat-val">🎯 {acc}%</div>
+        </div>
+        <div className="stat-card blue">
+          <div className="stat-label">Tiempo</div>
+          <div className="stat-val">⏱️ {timeStr}</div>
         </div>
       </div>
       {result.streakUp && <div className="streak-note">🔥 ¡Racha de {result.streak} {result.streak === 1 ? "día" : "días"}!</div>}
@@ -1409,7 +1416,7 @@ export default function App() {
     setResult(null);
   };
 
-  const finishLesson = ({ mistakes, total, missed }) => {
+  const finishLesson = ({ mistakes, total, missed, timeSec }) => {
     playFinish();
     const perfect = mistakes === 0;
     const xpEarned = 10 + (perfect ? 5 : 0) + (session.legendaryUnitId ? 10 : 0);
@@ -1455,7 +1462,7 @@ export default function App() {
 
     setProgress(p);
     saveProgress(p);
-    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [], legendaryDone: !!session.legendaryUnitId });
+    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [], legendaryDone: !!session.legendaryUnitId, timeSec: timeSec || 0 });
     setSession(null);
   };
 
@@ -1825,6 +1832,7 @@ button { font-family: inherit; cursor: pointer; }
 .stat-card.gold { border-color: #F2C94C; }
 .stat-card.green { border-color: #3FA65C; }
 .stat-card.fire { border-color: #E0704A; }
+.stat-card.blue { border-color: #2E7DD1; }
 .stat-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
 .stat-val { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; margin-top: 2px; }
 .streak-note { margin-top: 18px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #D97316; }
