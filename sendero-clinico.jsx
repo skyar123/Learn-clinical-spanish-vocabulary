@@ -442,6 +442,15 @@ const isYesterday = (key) => {
   return key === y;
 };
 
+// Exactly one full day skipped: the last active day was the day before yesterday.
+const isTwoDaysAgo = (key) => {
+  if (!key) return false;
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
+  const y = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return key === y;
+};
+
 // Global sound switch, mirrored from progress.soundOn. Audio helpers respect it.
 let soundOn = true;
 const setSoundOn = (v) => { soundOn = v; };
@@ -689,10 +698,22 @@ const unitDueForReview = (u, progress) => {
   return !!(d && d.done === 3 && (!d.ts || Date.now() - d.ts > REVIEW_AFTER));
 };
 
+// window.storage only exists inside the Claude artifact host. Outside it (a
+// standalone deploy like Netlify), it is undefined, so every call below falls
+// back to plain browser localStorage instead of silently no-op-ing forever.
+const hasArtifactStorage = () => {
+  try { return !!(window.storage && typeof window.storage.get === "function"); } catch (e) { return false; }
+};
+
 const loadProgress = async () => {
   try {
-    const res = await window.storage.get(STORAGE_KEY);
-    if (res && res.value) return { ...DEFAULT_PROGRESS, ...JSON.parse(res.value) };
+    if (hasArtifactStorage()) {
+      const res = await window.storage.get(STORAGE_KEY);
+      if (res && res.value) return { ...DEFAULT_PROGRESS, ...JSON.parse(res.value) };
+    } else if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return { ...DEFAULT_PROGRESS, ...JSON.parse(raw) };
+    }
   } catch (e) {
     /* first visit or storage unavailable */
   }
@@ -701,7 +722,11 @@ const loadProgress = async () => {
 
 const saveProgress = async (p) => {
   try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(p));
+    if (hasArtifactStorage()) {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(p));
+    } else if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+    }
   } catch (e) {
     /* keep going in memory */
   }
@@ -1063,7 +1088,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
 // ---------- COMPLETE SCREEN ----------
 
 function CompleteScreen({ result, onContinue, onReview }) {
-  const acc = Math.max(0, Math.round(((result.total - result.mistakes) / result.total) * 100));
+  const acc = result.total > 0 ? Math.max(0, Math.round(((result.total - result.mistakes) / result.total) * 100)) : 100;
   const missed = result.missed || [];
   const t = result.timeSec || 0;
   const timeStr = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
@@ -1616,8 +1641,8 @@ export default function App() {
     if (p.lastDay !== today) {
       if (isYesterday(p.lastDay)) {
         p.streak += 1;
-      } else if (p.lastDay && (p.freezes || 0) > 0) {
-        // A streak protection bridges the missed day(s) so the streak carries on.
+      } else if (isTwoDaysAgo(p.lastDay) && (p.freezes || 0) > 0) {
+        // A streak protection bridges exactly one missed day, not a longer gap.
         p.freezes -= 1; p.streak += 1; freezeUsed = true;
       } else {
         p.streak = 1;
