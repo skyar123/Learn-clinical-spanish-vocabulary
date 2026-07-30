@@ -618,6 +618,36 @@ const DEFAULT_PROGRESS = {
   goal: 20, xpToday: 0, xpDay: null,
   itemStats: {}, soundOn: true, audioExercises: true, reduceMotion: false, theme: "auto",
   gems: 0, freezes: 0, lessonsToday: 0, itemsToday: 0, questDay: null, questsClaimed: [],
+  mistakeInbox: [],
+};
+
+// Rolling mistake inbox: most recent unresolved misses, capped.
+const INBOX_CAP = 30;
+
+// Small edit distance, to tell a spelling slip from a wrong word.
+const levenshtein = (a, b) => {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] : 1 + Math.min(prev[j - 1], prev[j], cur[j - 1]);
+    }
+    prev = cur;
+  }
+  return prev[n];
+};
+
+// Label the kind of slip, from the exercise type and (for typing) the input.
+const tagMistake = (ex, typed) => {
+  if (ex.type === "build") return "orden";
+  if (ex.type === "listen_pick") return "escucha";
+  if (ex.type === "mcq_es_en" || ex.type === "mcq_en_es") return "significado";
+  if (ex.type === "type_es") {
+    return levenshtein(normalize(typed), normalize(ex.item.es)) <= 2 ? "ortografía" : "vocabulario";
+  }
+  return "vocabulario";
 };
 
 // ---- Daily quests + gems ----
@@ -930,7 +960,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
       playWrong();
       loseHeart();
       setCombo(0);
-      if (!missedRef.current.has(statKey(ex.item))) missedRef.current.set(statKey(ex.item), ex.item);
+      if (!missedRef.current.has(statKey(ex.item))) missedRef.current.set(statKey(ex.item), { ...ex.item, tag: tagMistake(ex, typed) });
       // Legendary caps mistakes: too many and the run fails outright.
       if (legendary && mistakes + 1 >= maxMistakes) { setFailed(true); setPhase("bad"); return; }
       // Ask it again later. Legendary stays keyboard-only; otherwise typing
@@ -1200,7 +1230,7 @@ function Trail({ progress, onStart, onReview, onLegendary, onClaimQuest }) {
 
 // ---------- PRACTICE + PROFILE ----------
 
-function PracticeTab({ progress, onStart }) {
+function PracticeTab({ progress, onStart, onRemediate }) {
   const unlocked = UNITS.filter((u) => (progress.units[u.id]?.done || 0) > 0);
   const wordCount = unlocked.reduce((n, u) => {
     const d = progress.units[u.id].done;
@@ -1208,6 +1238,7 @@ function PracticeTab({ progress, onStart }) {
   }, 0);
   const weak = weakCount(unlocked, progress.itemStats);
   const focusWeak = weak >= 3;
+  const inbox = progress.mistakeInbox || [];
   return (
     <div className="pad-screen">
       <h2 className="tab-title">Práctica</h2>
@@ -1228,6 +1259,29 @@ function PracticeTab({ progress, onStart }) {
           <Chunky full color="#2E7DD1" dark="#1F5C9E" onClick={() => onStart(unlocked)}>
             {focusWeak ? "REPASAR PALABRAS DIFÍCILES · +10 XP" : "EMPEZAR PRÁCTICA · +10 XP"}
           </Chunky>
+        </div>
+      )}
+
+      {inbox.length > 0 && (
+        <div className="inbox-card">
+          <div className="inbox-head">
+            <span>📥 Bandeja de errores</span>
+            <span className="inbox-count">{inbox.length}</span>
+          </div>
+          <p className="muted inbox-intro">Words you have missed lately. Answer one right and it graduates out of the list.</p>
+          <div className="inbox-list">
+            {inbox.map((e) => (
+              <div key={e.key} className="inbox-row">
+                <div className="gloss-text">
+                  <div className="gloss-es">{e.es}</div>
+                  <div className="gloss-en">{e.en}</div>
+                </div>
+                <span className={"tag tag-" + e.tag}>{e.tag}</span>
+                <SpeakBtn text={e.es} />
+              </div>
+            ))}
+          </div>
+          <Chunky full color="#D14D57" dark="#A83641" onClick={() => onRemediate(inbox)}>REMEDIAR ERRORES ({inbox.length}) · +10 XP</Chunky>
         </div>
       )}
     </div>
@@ -1503,6 +1557,17 @@ export default function App() {
     setResult(null);
   };
 
+  const startRemediation = (items) => {
+    const queue = items.map((it, i) => makeExercise(it, { items: ALL_ITEMS }, i));
+    beginSession({
+      title: "Bandeja de errores",
+      color: "#D14D57",
+      dark: "#A83641",
+      queue: applyAudioPref(queue, progress.audioExercises !== false),
+      isPractice: true,
+    });
+  };
+
   const finishLesson = ({ mistakes, total, missed, timeSec }) => {
     playFinish();
     const perfect = mistakes === 0;
@@ -1510,15 +1575,29 @@ export default function App() {
     const p = { ...progress, units: { ...progress.units } };
     p.xp += xpEarned;
 
-    const itemsAnswered = pendingStatsRef.current.length;
+    const pending = pendingStatsRef.current;
+    const itemsAnswered = pending.length;
     // Fold this session's answers into the weak-word stats.
     const stats = { ...(progress.itemStats || {}) };
-    pendingStatsRef.current.forEach(({ key, ok }) => {
+    pending.forEach(({ key, ok }) => {
       const s = stats[key] || { seen: 0, wrong: 0 };
       stats[key] = { seen: s.seen + 1, wrong: s.wrong + (ok ? 0 : 1) };
     });
-    pendingStatsRef.current = [];
     p.itemStats = stats;
+
+    // Rolling mistake inbox: missed items enter it; items answered right this
+    // session (and never missed) graduate out.
+    const missedList = missed || [];
+    const missedKeys = new Set(missedList.map(statKey));
+    const graduated = new Set(pending.filter((r) => r.ok && !missedKeys.has(r.key)).map((r) => r.key));
+    let inbox = (progress.mistakeInbox || []).filter((e) => !graduated.has(e.key));
+    missedList.forEach((m) => {
+      const key = statKey(m);
+      inbox = inbox.filter((e) => e.key !== key);
+      inbox.unshift({ key, es: m.es, en: m.en, alt: m.alt, phrase: !!m.phrase, unitId: m.unitId, tag: m.tag || "vocabulario", ts: Date.now() });
+    });
+    p.mistakeInbox = inbox.slice(0, INBOX_CAP);
+    pendingStatsRef.current = [];
 
     const today = todayKey();
     // Roll the daily counters and quests over on a new day.
@@ -1616,7 +1695,7 @@ export default function App() {
           </header>
           <main className="main-scroll">
             {tab === "trail" && <Trail progress={progress} onStart={startLesson} onReview={startUnitReview} onLegendary={startLegendary} onClaimQuest={claimQuest} />}
-            {tab === "practice" && <PracticeTab progress={progress} onStart={startPractice} />}
+            {tab === "practice" && <PracticeTab progress={progress} onStart={startPractice} onRemediate={startRemediation} />}
             {tab === "words" && <GlossaryTab progress={progress} />}
             {tab === "profile" && (
               <ProfileTab
@@ -1827,6 +1906,24 @@ button { font-family: inherit; cursor: pointer; }
 .quest-count { font-size: 11px; font-weight: 700; color: var(--muted); }
 .quest-reward { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 12px; color: var(--muted); flex-shrink: 0; }
 .quest-claimed { color: #2E7D45; font-size: 20px; font-weight: 800; flex-shrink: 0; width: 28px; text-align: center; }
+
+/* Mistake inbox */
+.inbox-card { background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 16px; }
+.inbox-head { display: flex; align-items: center; justify-content: space-between; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 17px; color: var(--ink); }
+.inbox-count { background: #FBEBEC; color: #A83641; font-size: 13px; padding: 1px 10px; border-radius: 999px; }
+.inbox-intro { margin: 6px 0 12px; }
+.inbox-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; max-height: 320px; overflow-y: auto; }
+.inbox-row { display: flex; align-items: center; gap: 8px; border: 2px solid var(--line); border-radius: 12px; padding: 9px 12px; }
+.tag {
+  font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 10px; letter-spacing: .3px;
+  padding: 2px 8px; border-radius: 999px; flex-shrink: 0; text-transform: uppercase;
+  color: #6B7A70; background: #EEF1EC;
+}
+.tag-ortografía { color: #B8860B; background: #FBF3DC; }
+.tag-vocabulario { color: #1F5C9E; background: #EAF3FC; }
+.tag-significado { color: #6B4291; background: #F1EAF8; }
+.tag-escucha { color: #1F7B79; background: #E4F5F4; }
+.tag-orden { color: #A83641; background: #FBEBEC; }
 
 /* Chunky buttons */
 .chunky {
