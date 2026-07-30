@@ -596,6 +596,14 @@ const buildPracticeQueue = (unlockedUnits, itemStats) => {
   return q;
 };
 
+// Legendary: keyboard-only recall, no multiple choice. Terms are typed;
+// phrases still use the tile builder (the only workable phrase input here).
+const makeLegendaryExercise = (item) =>
+  item.phrase ? makeBuild(item) : { type: "type_es", item };
+
+const buildLegendaryQueue = (unit) =>
+  shuffle(unit.items.map((it) => tag(it, unit.id))).map((item) => makeLegendaryExercise(item));
+
 // When listening exercises are turned off, serve the visible multiple-choice variant instead.
 const applyAudioPref = (queue, audioOn) =>
   audioOn ? queue : queue.map((ex) =>
@@ -844,7 +852,7 @@ function MatchExercise({ ex, onMistake, onDone }) {
 
 // ---------- LESSON SCREEN ----------
 
-function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onItemResult }) {
+function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onItemResult, legendary, maxMistakes }) {
   const [items, setItems] = useState(initialQueue);
   const [idx, setIdx] = useState(0);
   const [solved, setSolved] = useState(0);
@@ -854,6 +862,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
   const [selected, setSelected] = useState(null);
   const [typed, setTyped] = useState("");
   const [picked, setPicked] = useState([]);
+  const [failed, setFailed] = useState(false); // legendary: too many mistakes
   // Unique items missed this session, for the post-lesson review (keyed to dedupe).
   const missedRef = useRef(new Map());
   const [combo, setCombo] = useState(0);
@@ -891,10 +900,14 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
       loseHeart();
       setCombo(0);
       if (!missedRef.current.has(statKey(ex.item))) missedRef.current.set(statKey(ex.item), ex.item);
-      // Ask it again later. Typing falls back to multiple choice, and a
-      // listening item comes back as visible text so a missing voice can't trap it.
+      // Legendary caps mistakes: too many and the run fails outright.
+      if (legendary && mistakes + 1 >= maxMistakes) { setFailed(true); setPhase("bad"); return; }
+      // Ask it again later. Legendary stays keyboard-only; otherwise typing
+      // falls back to multiple choice and a listening item comes back visible.
       let retry;
-      if (ex.type === "type_es") {
+      if (legendary) {
+        retry = makeLegendaryExercise(ex.item);
+      } else if (ex.type === "type_es") {
         retry = { type: "mcq_en_es", item: ex.item, options: mcqOptions(ex.item, "es", { items: ALL_ITEMS }) };
       } else if (ex.type === "listen_pick") {
         retry = { type: "mcq_es_en", item: ex.item, options: mcqOptions(ex.item, "en", { items: ALL_ITEMS }) };
@@ -924,6 +937,19 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
       (ex.type === "build" && picked.length > 0));
 
   if (!ex) return null;
+
+  if (failed) {
+    return (
+      <div className="screen legend-fail">
+        <div className="legend-fail-badge">💥</div>
+        <h2 className="complete-title">Casi legendario</h2>
+        <p className="muted">Too many slips this time. The unit keeps its crown, so try the legendary run again whenever you are ready.</p>
+        <div className="complete-footer">
+          <Chunky full color="#7E5AA6" dark="#5E3F80" onClick={onQuit}>VOLVER AL SENDERO</Chunky>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="screen lesson-screen">
@@ -997,6 +1023,7 @@ function CompleteScreen({ result, onContinue, onReview }) {
       </div>
       {result.streakUp && <div className="streak-note">🔥 ¡Racha de {result.streak} {result.streak === 1 ? "día" : "días"}!</div>}
       {result.goalHit && <div className="goal-note">🎯 ¡Meta diaria cumplida!</div>}
+      {result.legendaryDone && <div className="legend-note">🌟 ¡Nivel legendario!</div>}
       <div className="complete-footer">
         {missed.length > 0 && (
           <div className="review-slot">
@@ -1036,7 +1063,7 @@ function Guidebook({ unit, onClose }) {
   );
 }
 
-function Trail({ progress, onStart, onReview }) {
+function Trail({ progress, onStart, onReview, onLegendary }) {
   const [guide, setGuide] = useState(null);
   const isUnitUnlocked = (i) => {
     if (progress.freeMode || i === 0) return true;
@@ -1051,12 +1078,19 @@ function Trail({ progress, onStart, onReview }) {
         const unlocked = isUnitUnlocked(ui);
         const done = progress.units[u.id]?.done || 0;
         const due = unitDueForReview(u, progress);
+        const legend = !!progress.units[u.id]?.legendary;
         return (
           <section key={u.id} className="etapa">
-            <div className={"milepost" + (due ? " due" : "")} style={{ background: unlocked ? u.color : "#B9C2BB", boxShadow: `0 4px 0 ${unlocked ? u.dark : "#96A099"}` }}>
-              <div className="mile-num">ETAPA {ui + 1}</div>
+            <div className={"milepost" + (due ? " due" : "") + (legend ? " legend" : "")} style={{ background: unlocked ? u.color : "#B9C2BB", boxShadow: `0 4px 0 ${unlocked ? u.dark : "#96A099"}` }}>
+              <div className="mile-num">
+                ETAPA {ui + 1}
+                {legend && <span className="mile-legend-tag">🌟 LEGENDARIO</span>}
+              </div>
               <div className="mile-title">{u.icon} {u.title}</div>
               <div className="mile-sub">{u.subtitle}</div>
+              {done === 3 && !legend && (
+                <button className="mile-legend" onClick={() => onLegendary(u)} aria-label={`Legendary run for ${u.title}`}>🌟 Legendario</button>
+              )}
               {due && (
                 <button className="mile-review" onClick={() => onReview(u)} aria-label={`Review ${u.title}`}>🔄 Repasar</button>
               )}
@@ -1342,6 +1376,17 @@ export default function App() {
     });
   };
 
+  const startLegendary = (unit) => {
+    beginSession({
+      title: `Legendario: ${unit.title}`,
+      color: "#7E5AA6",
+      dark: "#5E3F80",
+      queue: buildLegendaryQueue(unit),
+      isPractice: true,
+      legendaryUnitId: unit.id,
+    });
+  };
+
   const startPractice = (unlockedUnits) => {
     beginSession({
       title: "Práctica mixta",
@@ -1367,7 +1412,7 @@ export default function App() {
   const finishLesson = ({ mistakes, total, missed }) => {
     playFinish();
     const perfect = mistakes === 0;
-    const xpEarned = 10 + (perfect ? 5 : 0);
+    const xpEarned = 10 + (perfect ? 5 : 0) + (session.legendaryUnitId ? 10 : 0);
     const p = { ...progress, units: { ...progress.units } };
     p.xp += xpEarned;
 
@@ -1402,11 +1447,15 @@ export default function App() {
       // A unit review refreshes the spaced-repetition clock without changing progress.
       const prev = p.units[session.reviewUnitId] || {};
       p.units[session.reviewUnitId] = { ...prev, ts: Date.now() };
+    } else if (session.legendaryUnitId) {
+      // Completing the legendary run marks the unit and refreshes its review clock.
+      const prev = p.units[session.legendaryUnitId] || {};
+      p.units[session.legendaryUnitId] = { ...prev, legendary: true, ts: Date.now() };
     }
 
     setProgress(p);
     saveProgress(p);
-    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [] });
+    setResult({ xp: xpEarned, mistakes, total, streak: p.streak, streakUp, goalHit, missed: missed || [], legendaryDone: !!session.legendaryUnitId });
     setSession(null);
   };
 
@@ -1430,6 +1479,8 @@ export default function App() {
           onFinish={finishLesson}
           onQuit={() => { pendingStatsRef.current = []; setSession(null); }}
           onItemResult={recordItem}
+          legendary={!!session.legendaryUnitId}
+          maxMistakes={3}
         />
       ) : result ? (
         <CompleteScreen result={result} onContinue={() => setResult(null)} onReview={startReview} />
@@ -1454,7 +1505,7 @@ export default function App() {
             </div>
           </header>
           <main className="main-scroll">
-            {tab === "trail" && <Trail progress={progress} onStart={startLesson} onReview={startUnitReview} />}
+            {tab === "trail" && <Trail progress={progress} onStart={startLesson} onReview={startUnitReview} onLegendary={startLegendary} />}
             {tab === "practice" && <PracticeTab progress={progress} onStart={startPractice} />}
             {tab === "words" && <GlossaryTab progress={progress} />}
             {tab === "profile" && (
@@ -1570,6 +1621,26 @@ button { font-family: inherit; cursor: pointer; }
   border: 2px dashed rgba(255,255,255,.7); pointer-events: none;
 }
 .crown.cracked { opacity: .55; }
+.mile-legend {
+  position: absolute; top: 12px; right: 12px; border: none; border-radius: 999px;
+  background: rgba(255,255,255,.9); color: #5E3F80; font-family: 'Baloo 2', sans-serif;
+  font-weight: 800; font-size: 12px; padding: 4px 11px;
+}
+.mile-legend:active { background: #fff; }
+.mile-legend-tag {
+  font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 10px; letter-spacing: .5px;
+  margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+  background: rgba(255,255,255,.28); color: #fff;
+}
+.milepost.legend { background-image: linear-gradient(120deg, rgba(255,255,255,.16), rgba(255,255,255,0)); }
+.legend-note { margin-top: 10px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #7E5AA6; }
+.legend-fail { align-items: center; justify-content: center; text-align: center; padding: 30px 24px; gap: 10px; }
+.legend-fail-badge {
+  width: 96px; height: 96px; border-radius: 50%; background: #7E5AA6; color: #fff; font-size: 44px;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 0 #5E3F80; margin: 0 auto 8px;
+}
+.legend-fail .muted { max-width: 320px; margin: 0 auto; }
+.legend-fail .complete-footer { width: 100%; max-width: 340px; margin: 22px auto 0; }
 
 /* Modal (guidebook) */
 .modal-scrim {
