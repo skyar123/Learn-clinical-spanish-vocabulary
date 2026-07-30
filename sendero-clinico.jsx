@@ -659,6 +659,16 @@ const tagMistake = (ex, typed) => {
   return "vocabulario";
 };
 
+// English label for a mistake tag. The tag itself stays the internal key
+// (also used for the tag-<name> CSS class), only the displayed text changes.
+const TAG_LABELS = {
+  orden: "word order",
+  escucha: "listening",
+  significado: "meaning",
+  "ortografía": "spelling",
+  vocabulario: "vocabulary",
+};
+
 // ---- Daily quests + gems ----
 const QUEST_REWARD = 10; // gems per quest
 const FREEZE_COST = 30;  // gems for one streak protection
@@ -777,7 +787,7 @@ function TopBar({ progress, total, hearts, onQuit }) {
 function McqExercise({ ex, selected, onSelect, locked, esToEn }) {
   return (
     <div className="ex-wrap">
-      <div className="ex-prompt-label">{esToEn ? "What does this mean?" : "¿Cómo se dice en español?"}</div>
+      <div className="ex-prompt-label">{esToEn ? "What does this mean?" : "How do you say this in Spanish?"}</div>
       <div className="ex-prompt">
         {esToEn && <SpeakBtn text={ex.item.es} />}
         <span>{esToEn ? ex.item.es : ex.item.en}</span>
@@ -814,7 +824,7 @@ function ListenExercise({ ex, selected, onSelect, locked }) {
         {revealed ? (
           <div className="listen-reveal">{ex.item.es}</div>
         ) : (
-          <button className="listen-cant" onClick={() => setRevealed(true)}>No puedo escuchar ahora</button>
+          <button className="listen-cant" onClick={() => setRevealed(true)}>I can't listen right now</button>
         )}
       </div>
       <div className="opt-list">
@@ -1065,7 +1075,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
       {phase !== "answer" && (
         <div className={"feedback " + phase}>
           <div className="fb-text">
-            <div className="fb-head">{phase === "good" ? "¡Muy bien!" : "Casi. La respuesta:"}</div>
+            <div className="fb-head">{phase === "good" ? "¡Muy bien!" : "Almost! The answer:"}</div>
             {phase === "bad" && (
               <div className="fb-answer">
                 {ex.type === "match" ? "" : ex.item.es}
@@ -1301,7 +1311,7 @@ function PracticeTab({ progress, onStart, onRemediate }) {
                   <div className="gloss-es">{e.es}</div>
                   <div className="gloss-en">{e.en}</div>
                 </div>
-                <span className={"tag tag-" + e.tag}>{e.tag}</span>
+                <span className={"tag tag-" + e.tag}>{TAG_LABELS[e.tag] || e.tag}</span>
                 <SpeakBtn text={e.es} />
               </div>
             ))}
@@ -1774,7 +1784,7 @@ function Style() {
 html, body { margin: 0; padding: 0; background: var(--body); }
 
 .app {
-  max-width: 430px; margin: 0 auto; min-height: 100vh;
+  max-width: 430px; margin: 0 auto; min-height: 100vh; min-height: 100dvh;
   background: var(--bg); color: var(--ink);
   font-family: 'Karla', -apple-system, 'Segoe UI', sans-serif;
   display: flex; flex-direction: column; position: relative;
@@ -1806,7 +1816,7 @@ button { font-family: inherit; cursor: pointer; }
 .pill.goal.met { color: #2E7D45; border-color: #3FA65C; background: #EAF7EC; }
 .pill.gem { color: #2E7DD1; }
 
-.main-scroll { flex: 1; overflow-y: auto; padding-bottom: 84px; }
+.main-scroll { flex: 1; overflow-y: auto; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 
 /* Trail */
 .trail { padding: 18px 18px 30px; }
@@ -1850,7 +1860,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .milepost.legend { background-image: linear-gradient(120deg, rgba(255,255,255,.16), rgba(255,255,255,0)); }
 .legend-note { margin-top: 10px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #7E5AA6; }
-.legend-fail { align-items: center; justify-content: center; text-align: center; padding: 30px 24px; gap: 10px; }
+.legend-fail { align-items: center; justify-content: center; text-align: center; padding: 30px 24px calc(30px + env(safe-area-inset-bottom)); gap: 10px; }
 .legend-fail-badge {
   width: 96px; height: 96px; border-radius: 50%; background: #7E5AA6; color: #fff; font-size: 44px;
   display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 0 #5E3F80; margin: 0 auto 8px;
@@ -1963,7 +1973,7 @@ button { font-family: inherit; cursor: pointer; }
 .chunky.small { padding: 9px 14px; font-size: 13px; }
 
 /* Lesson */
-.screen { flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+.screen { flex: 1; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 .lesson-top { display: flex; align-items: center; gap: 12px; padding: 16px 16px 8px; }
 .quit { background: none; border: none; font-size: 20px; color: #97A59B; padding: 4px; }
 .bar-track { flex: 1; height: 14px; background: var(--line); border-radius: 999px; overflow: hidden; }
@@ -2046,8 +2056,8 @@ button { font-family: inherit; cursor: pointer; }
 .match-btn.done { border-color: #BFD9C6; background: #F0F7F1; color: #A6B0A6; box-shadow: none; }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
-.lesson-footer { padding: 14px 20px 22px; border-top: 2px solid var(--line); background: var(--bg); }
-.feedback { padding: 16px 20px 22px; animation: rise .22s ease; }
+.lesson-footer { padding: 14px 20px calc(22px + env(safe-area-inset-bottom)); border-top: 2px solid var(--line); background: var(--bg); }
+.feedback { padding: 16px 20px calc(22px + env(safe-area-inset-bottom)); animation: rise .22s ease; }
 .feedback.good { background: #DDF4E1; }
 .feedback.bad { background: #FBDDE0; }
 .fb-text { margin-bottom: 12px; }
@@ -2060,7 +2070,7 @@ button { font-family: inherit; cursor: pointer; }
 @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Complete */
-.complete-screen { align-items: center; justify-content: center; padding: 30px 24px; text-align: center; position: relative; }
+.complete-screen { align-items: center; justify-content: center; padding: 30px 24px calc(30px + env(safe-area-inset-bottom)); text-align: center; position: relative; }
 .complete-badge {
   width: 96px; height: 96px; border-radius: 50%; background: #3FA65C; color: #fff;
   font-size: 48px; display: flex; align-items: center; justify-content: center;
@@ -2092,7 +2102,7 @@ button { font-family: inherit; cursor: pointer; }
 .tabbar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 430px; display: flex; background: var(--card);
-  border-top: 2px solid var(--line); padding: 6px 0 10px; z-index: 10;
+  border-top: 2px solid var(--line); padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 10;
 }
 .tabbar button {
   flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
