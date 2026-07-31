@@ -391,6 +391,138 @@ const BUILD_DISTRACTORS = [
   "nada", "bien", "niño", "agua", "luego", "cosa", "grande",
 ];
 
+const BUILD_DISTRACTORS_EN = [
+  "the", "very", "my", "not", "with", "for", "you", "she",
+  "here", "good", "day", "help", "week", "also", "always",
+];
+
+// Whole sentences that put each unit's vocabulary to work, the way a home
+// visit actually sounds. Kept separate from UNITS.items so the twelve-item
+// lesson schema, the unlock gating, and saved progress all stay untouched.
+// Lesson 1 uses the first three, lesson 2 the last three, Repaso samples.
+const UNIT_SENTENCES = {
+  roles: [
+    { es: "Soy la trabajadora social de la clínica.", en: "I am the social worker from the clinic." },
+    { es: "El consejero escolar llamó esta mañana.", en: "The school counselor called this morning." },
+    { es: "El coordinador de casos habla con la familia.", en: "The case manager speaks with the family." },
+    { es: "La entrevista inicial dura una hora.", en: "The intake lasts one hour." },
+    { es: "La terapia de juego ayuda a los niños.", en: "Play therapy helps the children." },
+    { es: "Necesito revisar su historia clínica.", en: "I need to review your clinical history." },
+  ],
+  sistemas: [
+    { es: "Protección de menores abrió un caso.", en: "Child protection opened a case." },
+    { es: "El niño está en cuidado de crianza.", en: "The child is in foster care." },
+    { es: "La familia de crianza vive muy cerca.", en: "The foster family lives very close." },
+    { es: "Tenemos que ir a la corte.", en: "We have to go to court." },
+    { es: "Estoy obligado a reportar el abuso.", en: "I am mandated to report the abuse." },
+    { es: "Los servicios de apoyo familiar son gratuitos.", en: "Family support services are free." },
+  ],
+  confi: [
+    { es: "Su privacidad es muy importante.", en: "Your privacy is very important." },
+    { es: "Necesito su permiso para compartir esto.", en: "I need your permission to share this." },
+    { es: "Usted tiene derechos como paciente.", en: "You have rights as a patient." },
+    { es: "Vamos a firmar el consentimiento.", en: "We are going to sign the consent." },
+    { es: "La divulgación requiere su firma.", en: "Disclosure requires your signature." },
+    { es: "La confidencialidad protege a su familia.", en: "Confidentiality protects your family." },
+  ],
+  sentimientos: [
+    { es: "Mi hijo siente mucho enojo.", en: "My son feels a lot of anger." },
+    { es: "La tristeza puede durar muchos días.", en: "Sadness can last many days." },
+    { es: "El miedo es una emoción normal.", en: "Fear is a normal emotion." },
+    { es: "Ella siente culpa por todo.", en: "She feels guilt about everything." },
+    { es: "Hay esperanza para su familia.", en: "There is hope for your family." },
+    { es: "El cariño ayuda mucho a los niños.", en: "Affection helps the children a lot." },
+  ],
+  riesgo: [
+    { es: "Vamos a hacer un plan de crisis.", en: "We are going to make a crisis plan." },
+    { es: "¿Ha tenido pensamientos suicidas esta semana?", en: "Have you had suicidal thoughts this week?" },
+    { es: "Su valentía me impresiona mucho.", en: "Your courage impresses me a lot." },
+    { es: "Quiero entender cómo se siente hoy.", en: "I want to understand how you feel today." },
+    { es: "Usted no está solo en esto.", en: "You are not alone in this." },
+    { es: "Podemos llamar a la línea de crisis.", en: "We can call the crisis line." },
+  ],
+  depresion: [
+    { es: "Su estado de ánimo ha cambiado mucho.", en: "Your mood has changed a lot." },
+    { es: "He perdido el interés en todo.", en: "I have lost interest in everything." },
+    { es: "El apetito de mi hija cambió.", en: "My daughter's appetite changed." },
+    { es: "Los pensamientos negativos vienen cada día.", en: "The negative thoughts come every day." },
+    { es: "Usted va a sentirse mejor pronto.", en: "You are going to feel better soon." },
+    { es: "Quiero mejorar poco a poco.", en: "I want to improve little by little." },
+  ],
+  ansiedad: [
+    { es: "La ansiedad me despierta por la noche.", en: "Anxiety wakes me up at night." },
+    { es: "Mi hijo tiene ansiedad por separación.", en: "My son has separation anxiety." },
+    { es: "Tuve un ataque de pánico ayer.", en: "I had a panic attack yesterday." },
+    { es: "El dolor de estómago viene con los nervios.", en: "The stomachache comes with the nerves." },
+    { es: "Vamos a practicar la respiración juntos.", en: "We are going to practice breathing together." },
+    { es: "Las pesadillas ocurren casi cada noche.", en: "The nightmares happen almost every night." },
+  ],
+  trauma: [
+    { es: "El ruido fuerte es un desencadenante.", en: "Loud noise is a trigger." },
+    { es: "La evitación es común después del trauma.", en: "Avoidance is common after trauma." },
+    { es: "Las estrategias de anclaje ayudan mucho.", en: "Grounding strategies help a lot." },
+    { es: "Quiero que se sienta seguro aquí.", en: "I want you to feel safe here." },
+    { es: "La seguridad es nuestra primera prioridad.", en: "Safety is our first priority." },
+    { es: "Los recuerdos súbitos pueden asustar mucho.", en: "Flashbacks can be very frightening." },
+  ],
+  crianza: [
+    { es: "El tiempo de calidad fortalece la relación.", en: "Quality time strengthens the relationship." },
+    { es: "Vamos a elogiar el buen comportamiento.", en: "We are going to praise the good behavior." },
+    { es: "Las rutinas ayudan a los niños pequeños.", en: "Routines help young children." },
+    { es: "El sistema de puntos funciona muy bien.", en: "The point system works very well." },
+    { es: "Jugar con sus niños construye confianza.", en: "Playing with your children builds trust." },
+    { es: "La autoestima crece con el elogio.", en: "Self-esteem grows with praise." },
+  ],
+  terapias: [
+    { es: "La terapia grupal empieza el lunes.", en: "Group therapy starts on Monday." },
+    { es: "La terapia narrativa puede ayudarle mucho.", en: "Narrative therapy can help you a lot." },
+    { es: "Necesita una evaluación psicológica completa.", en: "He needs a complete psychological evaluation." },
+    { es: "La clínica ambulatoria está cerca de aquí.", en: "The outpatient clinic is close to here." },
+    { es: "El centro residencial ofrece más apoyo.", en: "The residential center offers more support." },
+    { es: "La escuela terapéutica tiene clases pequeñas.", en: "The therapeutic school has small classes." },
+  ],
+  diagnosticos: [
+    { es: "El trastorno de adaptación es muy común.", en: "Adjustment disorder is very common." },
+    { es: "Mi hijo tiene trastorno del espectro autista.", en: "My son has autism spectrum disorder." },
+    { es: "El mutismo selectivo aparece en la escuela.", en: "Selective mutism appears at school." },
+    { es: "El trastorno de pánico responde bien a la terapia.", en: "Panic disorder responds well to therapy." },
+    { es: "La discapacidad intelectual requiere apoyo especial.", en: "Intellectual disability requires special support." },
+    { es: "El trastorno bipolar necesita manejo de medicamentos.", en: "Bipolar disorder needs medication management." },
+  ],
+  conducta: [
+    { es: "El niño está muy agitado hoy.", en: "The child is very agitated today." },
+    { es: "Los berrinches ocurren cada mañana.", en: "The tantrums happen every morning." },
+    { es: "Mi hija es muy impulsiva a veces.", en: "My daughter is very impulsive sometimes." },
+    { es: "Se siente fuera de control.", en: "He feels out of control." },
+    { es: "El niño está desafiante con la maestra.", en: "The child is defiant with the teacher." },
+    { es: "Se ve letárgico por las tardes.", en: "He seems lethargic in the afternoons." },
+  ],
+  coordinacion: [
+    { es: "Voy a hablar con su equipo de salud.", en: "I am going to talk with your care team." },
+    { es: "La cita de seguimiento es en dos semanas.", en: "The follow-up appointment is in two weeks." },
+    { es: "La atención primaria puede referirlo.", en: "Primary care can refer him." },
+    { es: "El equipo multidisciplinario se reúne los viernes.", en: "The multidisciplinary team meets on Fridays." },
+    { es: "La coordinación de servicios es mi trabajo.", en: "Care coordination is my job." },
+    { es: "Le van a dar de alta mañana.", en: "They are going to discharge him tomorrow." },
+  ],
+  educacion: [
+    { es: "Mi hijo tiene un impedimento del habla.", en: "My son has a speech impairment." },
+    { es: "El autismo requiere servicios especiales.", en: "Autism requires special services." },
+    { es: "La escuela evalúa el retraso del desarrollo.", en: "The school evaluates the developmental delay." },
+    { es: "El impedimento auditivo necesita apoyo en clase.", en: "Auditory impairment needs support in class." },
+    { es: "El trastorno del lenguaje afecta la lectura.", en: "Language disorder affects reading." },
+    { es: "Ella tiene un trastorno del aprendizaje.", en: "She has a learning disability." },
+  ],
+  acoso: [
+    { es: "El acoso escolar afecta la autoestima.", en: "Bullying affects self-esteem." },
+    { es: "Otros niños lo maltratan en el autobús.", en: "Other children mistreat him on the bus." },
+    { es: "Sus pares lo ridiculizan en clase.", en: "His peers ridicule him in class." },
+    { es: "Los chismes también son una forma de acoso.", en: "Gossip is also a form of harassment." },
+    { es: "Vamos a enseñar destrezas de seguridad.", en: "We are going to teach safety skills." },
+    { es: "Nadie debe denigrar a un niño.", en: "No one should denigrate a child." },
+  ],
+};
+
 // ---------- HELPERS ----------
 
 const shuffle = (arr) => {
@@ -438,6 +570,15 @@ const isYesterday = (key) => {
   if (!key) return false;
   const d = new Date();
   d.setDate(d.getDate() - 1);
+  const y = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return key === y;
+};
+
+// Exactly one full day skipped: the last active day was the day before yesterday.
+const isTwoDaysAgo = (key) => {
+  if (!key) return false;
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
   const y = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return key === y;
 };
@@ -516,17 +657,35 @@ const mcqOptions = (item, key, unit) => {
   return shuffle([item, ...opts]);
 };
 
-const makeBuild = (item) => {
-  const tokens = item.es.split(" ");
-  const extra = sample(BUILD_DISTRACTORS, Math.min(3, Math.max(2, 8 - tokens.length)), (w) =>
+// Tile builder. Direction "es" shows the English and builds the Spanish;
+// direction "en" shows (and speaks) the Spanish and builds the English.
+const makeTileExercise = (item, dir) => {
+  const tokens = (dir === "en" ? item.en : item.es).split(" ");
+  const pool = dir === "en" ? BUILD_DISTRACTORS_EN : BUILD_DISTRACTORS;
+  const extra = sample(pool, Math.min(3, Math.max(2, 8 - tokens.length)), (w) =>
     tokens.some((t) => normalize(t) === normalize(w))
   );
   return {
-    type: "build",
+    type: dir === "en" ? "build_en" : "build",
     item,
     target: tokens,
     tiles: shuffle([...tokens, ...extra].map((w, i) => ({ id: i + "-" + w, word: w }))),
   };
+};
+
+const makeBuild = (item) => makeTileExercise(item, "es");
+
+// Sentence drills alternate direction so both comprehension and production
+// get practiced on the same unit vocabulary.
+const makeSentenceExercise = (s, idx) => makeTileExercise(s, idx % 2 === 0 ? "en" : "es");
+
+// Sentences for a lesson: first three for lesson 1, last three for lesson 2,
+// a sample for Repaso. Marked phrase so they route to tile building elsewhere.
+const sentencesForLesson = (unitId, lessonIdx) => {
+  const all = (UNIT_SENTENCES[unitId] || []).map((s) => ({ ...s, phrase: true, unitId }));
+  if (lessonIdx === 0) return all.slice(0, 3);
+  if (lessonIdx === 1) return all.slice(3, 6);
+  return sample(all, 3);
 };
 
 const makeExercise = (item, unit, idx) => {
@@ -569,6 +728,11 @@ const buildLessonQueue = (unit, lessonIdx) => {
   const q = shuffle(slice).map((item, i) => makeExercise(item, unit, i));
   const match = makeMatch(slice);
   if (match) q.splice(Math.min(3, q.length), 0, match);
+  // Weave in whole sentences built from this lesson's vocabulary, spaced out
+  // rather than bunched at the end.
+  sentencesForLesson(unit.id, lessonIdx).forEach((s, i) => {
+    q.splice(Math.min(q.length, 2 + i * 3), 0, makeSentenceExercise(s, i));
+  });
   return q;
 };
 
@@ -641,13 +805,23 @@ const levenshtein = (a, b) => {
 
 // Label the kind of slip, from the exercise type and (for typing) the input.
 const tagMistake = (ex, typed) => {
-  if (ex.type === "build") return "orden";
+  if (ex.type === "build" || ex.type === "build_en") return "orden";
   if (ex.type === "listen_pick") return "escucha";
   if (ex.type === "mcq_es_en" || ex.type === "mcq_en_es") return "significado";
   if (ex.type === "type_es") {
     return levenshtein(normalize(typed), normalize(ex.item.es)) <= 2 ? "ortografía" : "vocabulario";
   }
   return "vocabulario";
+};
+
+// English label for a mistake tag. The tag itself stays the internal key
+// (also used for the tag-<name> CSS class), only the displayed text changes.
+const TAG_LABELS = {
+  orden: "word order",
+  escucha: "listening",
+  significado: "meaning",
+  "ortografía": "spelling",
+  vocabulario: "vocabulary",
 };
 
 // ---- Daily quests + gems ----
@@ -689,10 +863,22 @@ const unitDueForReview = (u, progress) => {
   return !!(d && d.done === 3 && (!d.ts || Date.now() - d.ts > REVIEW_AFTER));
 };
 
+// window.storage only exists inside the Claude artifact host. Outside it (a
+// standalone deploy like Netlify), it is undefined, so every call below falls
+// back to plain browser localStorage instead of silently no-op-ing forever.
+const hasArtifactStorage = () => {
+  try { return !!(window.storage && typeof window.storage.get === "function"); } catch (e) { return false; }
+};
+
 const loadProgress = async () => {
   try {
-    const res = await window.storage.get(STORAGE_KEY);
-    if (res && res.value) return { ...DEFAULT_PROGRESS, ...JSON.parse(res.value) };
+    if (hasArtifactStorage()) {
+      const res = await window.storage.get(STORAGE_KEY);
+      if (res && res.value) return { ...DEFAULT_PROGRESS, ...JSON.parse(res.value) };
+    } else if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) return { ...DEFAULT_PROGRESS, ...JSON.parse(raw) };
+    }
   } catch (e) {
     /* first visit or storage unavailable */
   }
@@ -701,7 +887,11 @@ const loadProgress = async () => {
 
 const saveProgress = async (p) => {
   try {
-    await window.storage.set(STORAGE_KEY, JSON.stringify(p));
+    if (hasArtifactStorage()) {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(p));
+    } else if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+    }
   } catch (e) {
     /* keep going in memory */
   }
@@ -752,7 +942,7 @@ function TopBar({ progress, total, hearts, onQuit }) {
 function McqExercise({ ex, selected, onSelect, locked, esToEn }) {
   return (
     <div className="ex-wrap">
-      <div className="ex-prompt-label">{esToEn ? "What does this mean?" : "¿Cómo se dice en español?"}</div>
+      <div className="ex-prompt-label">{esToEn ? "What does this mean?" : "How do you say this in Spanish?"}</div>
       <div className="ex-prompt">
         {esToEn && <SpeakBtn text={ex.item.es} />}
         <span>{esToEn ? ex.item.es : ex.item.en}</span>
@@ -789,7 +979,7 @@ function ListenExercise({ ex, selected, onSelect, locked }) {
         {revealed ? (
           <div className="listen-reveal">{ex.item.es}</div>
         ) : (
-          <button className="listen-cant" onClick={() => setRevealed(true)}>No puedo escuchar ahora</button>
+          <button className="listen-cant" onClick={() => setRevealed(true)}>I can't listen right now</button>
         )}
       </div>
       <div className="opt-list">
@@ -831,11 +1021,15 @@ function TypeExercise({ ex, value, onChange, locked }) {
 }
 
 function BuildExercise({ ex, picked, setPicked, locked }) {
+  const toEn = ex.type === "build_en";
   const pickedIds = new Set(picked.map((t) => t.id));
   return (
     <div className="ex-wrap">
-      <div className="ex-prompt-label">Build the sentence in Spanish</div>
-      <div className="ex-prompt small"><span>{ex.item.en}</span></div>
+      <div className="ex-prompt-label">{toEn ? "Translate this sentence" : "Build the sentence in Spanish"}</div>
+      <div className="ex-prompt small">
+        {toEn && <SpeakBtn text={ex.item.es} />}
+        <span>{toEn ? ex.item.es : ex.item.en}</span>
+      </div>
       <div className="build-line">
         {picked.length === 0 && <span className="build-placeholder">Tap the words below in order</span>}
         {picked.map((t) => (
@@ -849,7 +1043,7 @@ function BuildExercise({ ex, picked, setPicked, locked }) {
         {ex.tiles.map((t) => (
           <button key={t.id} className={"tile" + (pickedIds.has(t.id) ? " used" : "")}
             disabled={locked || pickedIds.has(t.id)}
-            onClick={() => { setPicked([...picked, t]); speak(t.word); }}>
+            onClick={() => { setPicked([...picked, t]); if (!toEn) speak(t.word); }}>
             {t.word}
           </button>
         ))}
@@ -942,7 +1136,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
       ok = selected !== null && ex.options[selected].en === ex.item.en;
     } else if (ex.type === "type_es") {
       ok = answerMatches(typed, ex.item);
-    } else if (ex.type === "build") {
+    } else if (ex.type === "build" || ex.type === "build_en") {
       ok = picked.map((t) => t.word).join(" ") === ex.target.join(" ");
     }
     if (onItemResult) onItemResult(ex.item, ok);
@@ -995,7 +1189,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
   const canCheck =
     ex && (((ex.type.startsWith("mcq") || ex.type === "listen_pick") && selected !== null) ||
       (ex.type === "type_es" && typed.trim().length > 0) ||
-      (ex.type === "build" && picked.length > 0));
+      (ex.type.startsWith("build") && picked.length > 0));
 
   if (!ex) return null;
 
@@ -1027,7 +1221,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
         {ex.type === "mcq_en_es" && <McqExercise ex={ex} selected={selected} onSelect={setSelected} locked={phase !== "answer"} esToEn={false} />}
         {ex.type === "listen_pick" && <ListenExercise key={idx} ex={ex} selected={selected} onSelect={setSelected} locked={phase !== "answer"} />}
         {ex.type === "type_es" && <TypeExercise ex={ex} value={typed} onChange={setTyped} locked={phase !== "answer"} />}
-        {ex.type === "build" && <BuildExercise ex={ex} picked={picked} setPicked={setPicked} locked={phase !== "answer"} />}
+        {ex.type.startsWith("build") && <BuildExercise ex={ex} picked={picked} setPicked={setPicked} locked={phase !== "answer"} />}
         {ex.type === "match" && <MatchExercise key={idx} ex={ex} onMistake={loseHeart} onDone={matchDone} />}
       </div>
 
@@ -1040,10 +1234,10 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
       {phase !== "answer" && (
         <div className={"feedback " + phase}>
           <div className="fb-text">
-            <div className="fb-head">{phase === "good" ? "¡Muy bien!" : "Casi. La respuesta:"}</div>
+            <div className="fb-head">{phase === "good" ? "¡Muy bien!" : "Almost! The answer:"}</div>
             {phase === "bad" && (
               <div className="fb-answer">
-                {ex.type === "match" ? "" : ex.item.es}
+                {ex.type === "match" ? "" : ex.type === "build_en" ? ex.item.en : ex.item.es}
                 {ex.type !== "match" && <SpeakBtn text={ex.item.es} color="#fff" />}
               </div>
             )}
@@ -1063,7 +1257,7 @@ function LessonScreen({ title, color, dark, initialQueue, onFinish, onQuit, onIt
 // ---------- COMPLETE SCREEN ----------
 
 function CompleteScreen({ result, onContinue, onReview }) {
-  const acc = Math.max(0, Math.round(((result.total - result.mistakes) / result.total) * 100));
+  const acc = result.total > 0 ? Math.max(0, Math.round(((result.total - result.mistakes) / result.total) * 100)) : 100;
   const missed = result.missed || [];
   const t = result.timeSec || 0;
   const timeStr = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
@@ -1276,7 +1470,7 @@ function PracticeTab({ progress, onStart, onRemediate }) {
                   <div className="gloss-es">{e.es}</div>
                   <div className="gloss-en">{e.en}</div>
                 </div>
-                <span className={"tag tag-" + e.tag}>{e.tag}</span>
+                <span className={"tag tag-" + e.tag}>{TAG_LABELS[e.tag] || e.tag}</span>
                 <SpeakBtn text={e.es} />
               </div>
             ))}
@@ -1616,8 +1810,8 @@ export default function App() {
     if (p.lastDay !== today) {
       if (isYesterday(p.lastDay)) {
         p.streak += 1;
-      } else if (p.lastDay && (p.freezes || 0) > 0) {
-        // A streak protection bridges the missed day(s) so the streak carries on.
+      } else if (isTwoDaysAgo(p.lastDay) && (p.freezes || 0) > 0) {
+        // A streak protection bridges exactly one missed day, not a longer gap.
         p.freezes -= 1; p.streak += 1; freezeUsed = true;
       } else {
         p.streak = 1;
@@ -1749,7 +1943,7 @@ function Style() {
 html, body { margin: 0; padding: 0; background: var(--body); }
 
 .app {
-  max-width: 430px; margin: 0 auto; min-height: 100vh;
+  max-width: 430px; margin: 0 auto; min-height: 100vh; min-height: 100dvh;
   background: var(--bg); color: var(--ink);
   font-family: 'Karla', -apple-system, 'Segoe UI', sans-serif;
   display: flex; flex-direction: column; position: relative;
@@ -1781,7 +1975,7 @@ button { font-family: inherit; cursor: pointer; }
 .pill.goal.met { color: #2E7D45; border-color: #3FA65C; background: #EAF7EC; }
 .pill.gem { color: #2E7DD1; }
 
-.main-scroll { flex: 1; overflow-y: auto; padding-bottom: 84px; }
+.main-scroll { flex: 1; overflow-y: auto; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 
 /* Trail */
 .trail { padding: 18px 18px 30px; }
@@ -1825,7 +2019,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .milepost.legend { background-image: linear-gradient(120deg, rgba(255,255,255,.16), rgba(255,255,255,0)); }
 .legend-note { margin-top: 10px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #7E5AA6; }
-.legend-fail { align-items: center; justify-content: center; text-align: center; padding: 30px 24px; gap: 10px; }
+.legend-fail { align-items: center; justify-content: center; text-align: center; padding: 30px 24px calc(30px + env(safe-area-inset-bottom)); gap: 10px; }
 .legend-fail-badge {
   width: 96px; height: 96px; border-radius: 50%; background: #7E5AA6; color: #fff; font-size: 44px;
   display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 0 #5E3F80; margin: 0 auto 8px;
@@ -1938,7 +2132,7 @@ button { font-family: inherit; cursor: pointer; }
 .chunky.small { padding: 9px 14px; font-size: 13px; }
 
 /* Lesson */
-.screen { flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+.screen { flex: 1; display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
 .lesson-top { display: flex; align-items: center; gap: 12px; padding: 16px 16px 8px; }
 .quit { background: none; border: none; font-size: 20px; color: #97A59B; padding: 4px; }
 .bar-track { flex: 1; height: 14px; background: var(--line); border-radius: 999px; overflow: hidden; }
@@ -2021,8 +2215,8 @@ button { font-family: inherit; cursor: pointer; }
 .match-btn.done { border-color: #BFD9C6; background: #F0F7F1; color: #A6B0A6; box-shadow: none; }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
-.lesson-footer { padding: 14px 20px 22px; border-top: 2px solid var(--line); background: var(--bg); }
-.feedback { padding: 16px 20px 22px; animation: rise .22s ease; }
+.lesson-footer { padding: 14px 20px calc(22px + env(safe-area-inset-bottom)); border-top: 2px solid var(--line); background: var(--bg); }
+.feedback { padding: 16px 20px calc(22px + env(safe-area-inset-bottom)); animation: rise .22s ease; }
 .feedback.good { background: #DDF4E1; }
 .feedback.bad { background: #FBDDE0; }
 .fb-text { margin-bottom: 12px; }
@@ -2035,7 +2229,7 @@ button { font-family: inherit; cursor: pointer; }
 @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Complete */
-.complete-screen { align-items: center; justify-content: center; padding: 30px 24px; text-align: center; position: relative; }
+.complete-screen { align-items: center; justify-content: center; padding: 30px 24px calc(30px + env(safe-area-inset-bottom)); text-align: center; position: relative; }
 .complete-badge {
   width: 96px; height: 96px; border-radius: 50%; background: #3FA65C; color: #fff;
   font-size: 48px; display: flex; align-items: center; justify-content: center;
@@ -2067,7 +2261,7 @@ button { font-family: inherit; cursor: pointer; }
 .tabbar {
   position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
   width: 100%; max-width: 430px; display: flex; background: var(--card);
-  border-top: 2px solid var(--line); padding: 6px 0 10px; z-index: 10;
+  border-top: 2px solid var(--line); padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 10;
 }
 .tabbar button {
   flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
